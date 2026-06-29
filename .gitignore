@@ -1,0 +1,25 @@
+# Hemliga nycklar — laddas upp manuellt som Secrets i Streamlit Cloud
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Streamlit lokal secrets (läggs in manuellt i Streamlit Cloud-dashboarden)
+.streamlit/secrets.toml
+
+# Övrigt
+.DS_Store
+streamlit.log
+*.log
+.claude/
