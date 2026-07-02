@@ -67,8 +67,8 @@ def render():
         if list_ids:
             st.caption(f"📋 {len(list_ids)} bolag inlästa.")
 
-    n_companies = st.slider("Max bolag att granska", 3, 60, 20,
-                            help="Hur många bolag som djupgranskas (varulager). Fler = längre tid.")
+    n_companies = st.slider("Max bolag att granska", 3, 300, 60,
+                            help="Hur många bolag som djupgranskas (varulager). Fler = längre tid. 300 bolag ≈ 5–10 min.")
 
     # IHA-kriterierna ligger i en hopfällbar panel — standardvärdena passar de
     # flesta sök, så du slipper se rattarna varje gång. Öppna för att finjustera.
