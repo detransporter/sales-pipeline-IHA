@@ -45,6 +45,16 @@ def render():
         if missing:
             st.caption(f"💡 {len(missing)} lead(s) saknar person. Bulk-sök hittar person, "
                        f"hemsida OCH e-post per bolag (drar Apify-krediter).")
+            # Proaktiv kreditvarning — kollas en gång per session (ingen polling).
+            if "apify_credit" not in st.session_state:
+                st.session_state["apify_credit"] = _apify.remaining_usage_usd()
+            _cred = st.session_state["apify_credit"]
+            if _cred is not None and _cred < 0.50:
+                st.error(
+                    f"⚠️ Apify-krediterna är nästan slut (~${_cred} kvar av $5/mån). "
+                    "Hemsides- och personsökning **kommer att misslyckas** tills du fyller "
+                    "på (console.apify.com/billing) eller cykeln återställs. "
+                    "Mejlskrapning på en redan känd hemsida fungerar ändå (gratis).")
             if st.button(f"🔍 Hitta person + e-post för alla ({len(missing)})", type="primary",
                          key="bulk_people"):
                 prog = st.progress(0.0)
@@ -73,6 +83,10 @@ def render():
                     except Exception:
                         pass
                     prog.progress((i + 1) / len(missing))
+                # Uppdatera kreditsaldot och surfa upp ev. Apify-fel (t.ex. slut på krediter)
+                st.session_state["apify_credit"] = _apify.remaining_usage_usd()
+                if _apify.LAST_APIFY_ERROR:
+                    st.error(f"⚠️ {_apify.LAST_APIFY_ERROR}")
                 st.success(f"Hittade person på {found_n} av {len(missing)} bolag. "
                            "Verifiera länkarna innan du godkänner.")
                 st.rerun()

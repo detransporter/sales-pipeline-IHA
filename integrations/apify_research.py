@@ -41,9 +41,35 @@ RENDER_ACTOR = os.getenv("APIFY_RENDER_ACTOR", "apify/website-content-crawler").
 # run-sync väntar tills körningen är klar (max ~5 min). Bra för små scrapes.
 RUN_TIMEOUT = 300
 
+# Senaste Apify-felet i klartext (tomt = inget fel). Sätts av _run_actor så att
+# UI:t kan säga t.ex. "krediterna slut" istället för att tyst hitta ingenting.
+LAST_APIFY_ERROR = ""
+
 
 def is_configured() -> bool:
     return bool(APIFY_TOKEN)
+
+
+def remaining_usage_usd() -> float | None:
+    """
+    Återstående Apify-krediter i USD denna faktureringscykel (gratisplan = $5/mån),
+    eller None om det inte går att läsa. Låter UI:t varna INNAN en sökning startar.
+    """
+    if not is_configured():
+        return None
+    try:
+        r = requests.get(
+            f"https://api.apify.com/v2/users/me/limits?token={APIFY_TOKEN}", timeout=20)
+        if r.status_code != 200:
+            return None
+        d = r.json().get("data", {})
+        limit = (d.get("limits") or {}).get("maxMonthlyUsageUsd")
+        used = (d.get("current") or {}).get("monthlyUsageUsd")
+        if limit is not None and used is not None:
+            return round(float(limit) - float(used), 2)
+    except Exception:
+        return None
+    return None
 
 
 def _actor_path(actor: str) -> str:
@@ -56,6 +82,7 @@ def _run_actor(actor: str, run_input: dict) -> list[dict]:
     Kör en Apify-actor synkront och returnera dataset-raderna.
     Tom lista vid fel — kraschar aldrig anropande agent.
     """
+    global LAST_APIFY_ERROR
     if not is_configured():
         return []
     url = (
@@ -65,9 +92,18 @@ def _run_actor(actor: str, run_input: dict) -> list[dict]:
     try:
         r = requests.post(url, json=run_input, timeout=RUN_TIMEOUT)
         if r.status_code not in (200, 201):
+            # Gör vanligaste felet begripligt (krediter slut) — annars generiskt.
+            if r.status_code == 402:
+                LAST_APIFY_ERROR = ("Apify-krediterna är slut — hemsides- och "
+                                    "personsökning kräver den betalda Google-aktorn. "
+                                    "Fyll på krediter på console.apify.com/billing.")
+            else:
+                LAST_APIFY_ERROR = f"Apify svarade {r.status_code} för aktorn {actor}."
             return []
         data = r.json()
-    except Exception:
+        LAST_APIFY_ERROR = ""
+    except Exception as e:
+        LAST_APIFY_ERROR = f"Kunde inte nå Apify: {e}"
         return []
     if isinstance(data, list):
         return [d for d in data if isinstance(d, dict)]
