@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MODEL = "claude-sonnet-4-6"
+MODEL = "claude-opus-4-8"
 
 SIGNATURE = (
     "Vänliga hälsningar,\n"
