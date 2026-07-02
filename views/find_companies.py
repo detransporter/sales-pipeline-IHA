@@ -11,6 +11,48 @@ from database import supabase_client as db
 from views.shared import goto
 
 
+def _deep_read_candidates(pool_slice):
+    """Djupläs varulager per bolag (ett Allabolag-anrop styck). Returnerar fins-lista."""
+    fins = []
+    n = len(pool_slice)
+    prog = st.progress(0.0, text="Läser varulager per bolag...")
+    for i, c in enumerate(pool_slice):
+        try:
+            ident = c.get("_ident")
+            if ident is not None:                       # egen lista (org-nr / namn)
+                digits = _re.sub(r"\D", "", ident)
+                fin = (allabolag.get_financials(orgnr=digits) if len(digits) == 10
+                       else allabolag.get_financials(company_name=ident))
+            elif c.get("orgnr"):
+                fin = allabolag.get_financials(orgnr=c["orgnr"])
+            else:
+                fin = {}
+            if fin:
+                fin["website"] = fin.get("website") or c.get("website", "")
+                fin["bransch"] = fin.get("bransch") or c.get("bransch", "")
+                fins.append(fin)
+        except Exception:
+            pass
+        prog.progress((i + 1) / max(1, n), text=f"Läst {i + 1}/{n} bolag")
+    return fins
+
+
+def _rescreen(oms_min, oms_max, max_anstallda, min_lagerandel, max_marginal, hard_margin):
+    """Kör om kvalificeringen på redan djuplästa bolag — ingen ny nätverkstrafik."""
+    fins = st.session_state.get("screen_fins", [])
+    res = screener.screen_companies(
+        fins, oms_min=oms_min, oms_max=oms_max, max_anstallda=int(max_anstallda),
+        min_lagerandel=min_lagerandel, max_marginal=max_marginal, hard_margin=hard_margin)
+    fn = st.session_state.get("screen_funnel", {})
+    res["found"] = fn.get("found", 0)
+    res["in_bransch"] = fn.get("in_bransch")
+    res["bransch_val"] = fn.get("bransch_val", "")
+    res["survivors"] = len(fins)
+    res["pool_total"] = len(st.session_state.get("screen_pool", []))
+    res["read"] = st.session_state.get("screen_read", 0)
+    st.session_state["screen_result"] = res
+
+
 def render():
     st.title("🔍 Hitta bolag")
     st.caption("Hittar bolag där kapital bevisligen sitter fast i lager — via Allabolags "
@@ -96,58 +138,27 @@ def render():
 
     can_run = bool(list_ids) if list_mode else True
     if st.button("🔎 Screena bolag", type="primary", disabled=not can_run):
-        found, seen = [], set()
-        fins = []
-        res_funnel = None
+        pool, found_n, in_bransch_n = [], 0, None
 
         if list_mode:
-            ids = list_ids[:int(n_companies)]
-            found = ids
-            prog = st.progress(0.0, text="Läser bolagens ekonomi...")
-            for i, ident in enumerate(ids):
-                digits = _re.sub(r"\D", "", ident)
-                try:
-                    if len(digits) == 10:
-                        fin = allabolag.get_financials(orgnr=digits)
-                    else:
-                        fin = allabolag.get_financials(company_name=ident)
-                    if fin:
-                        fins.append(fin)
-                except Exception:
-                    pass
-                prog.progress((i + 1) / len(ids), text=f"Läst {i + 1}/{len(ids)} bolag")
+            pool = [{"_ident": x} for x in list_ids]
+            found_n = len(list_ids)
 
         elif fritext.strip():
-            # Nyckelordssökning — hämta bolag som matchar fritetxordet, tillämpa ekonomifilter.
+            # Nyckelordssökning — hämta bolag som matchar ordet, tillämpa ekonomifilter.
             kw = fritext.strip()
             ort_kw = ort if ort != "Hela Sverige" else "Sverige"
             with st.spinner(f"Söker '{kw}' på Allabolag..."):
                 kw_hits = allabolag.search_companies(kw, ort_kw, max_results=50)
-            found = kw_hits
-            st.caption(f"Hittade {len(kw_hits)} bolag för '{kw}' — tillämpar ekonomifilter...")
-
-            survivors = [c for c in kw_hits
-                         if screener.passes_prefilter(
-                             c, oms_min=oms_min, oms_max=oms_max,
-                             max_anstallda=int(max_anstallda), max_marginal=max_marginal,
-                             require_revenue=False, hard_margin=hard_margin)]
-            res_funnel = [len(kw_hits), len(survivors)]
-
-            prog2 = st.progress(0.0, text="Läser varulager per bolag...")
-            for i, c in enumerate(survivors[:int(n_companies)]):
-                try:
-                    fin = allabolag.get_financials(orgnr=c.get("orgnr", "")) if c.get("orgnr") else {}
-                    if fin:
-                        fin["website"] = fin.get("website") or c.get("website", "")
-                        fin["bransch"] = fin.get("bransch") or c.get("bransch", "")
-                        fins.append(fin)
-                except Exception:
-                    pass
-                prog2.progress((i + 1) / max(1, min(len(survivors), int(n_companies))),
-                               text=f"Läst {i + 1}/{min(len(survivors), int(n_companies))} bolag")
+            pool = [c for c in kw_hits
+                    if screener.passes_prefilter(
+                        c, oms_min=oms_min, oms_max=oms_max,
+                        max_anstallda=int(max_anstallda), max_marginal=max_marginal,
+                        require_revenue=False, hard_margin=hard_margin)]
+            found_n, in_bransch_n = len(kw_hits), len(pool)
 
         else:
-            # Segmentering-svep — nuvarande standardläge.
+            # Segmentering-svep län för län.
             if ort == "Hela Sverige":
                 lan_list = screener.LAN
                 per_lan = 150
@@ -157,7 +168,6 @@ def render():
 
             prefixes = screener.BRANSCH_SNI.get(bransch_val, [])
             pooled: dict = {}
-            found = []
             prog0 = st.progress(0.0, text=f"Sveper {len(lan_list)} län via Allabolag Segmentering...")
             for i, lan in enumerate(lan_list):
                 try:
@@ -171,10 +181,10 @@ def render():
                     key = c.get("orgnr") or c.get("bolag", "").lower()
                     if key and key not in pooled:
                         pooled[key] = c
-                found = list(pooled.values())
                 prog0.progress((i + 1) / len(lan_list),
-                               text=f"{lan}: {len(found)} bolag i bandet hittills...")
+                               text=f"{lan}: {len(pooled)} bolag i bandet hittills...")
 
+            found = list(pooled.values())
             in_bransch = [c for c in found
                           if screener.nace_matches(c.get("nace_code", ""), prefixes)]
             survivors = [c for c in in_bransch
@@ -182,37 +192,25 @@ def render():
                              c, oms_min=oms_min, oms_max=oms_max,
                              max_anstallda=int(max_anstallda), max_marginal=max_marginal,
                              require_revenue=True, hard_margin=hard_margin)]
-            res_funnel = (len(found), len(in_bransch), len(survivors))
 
             def _margin(c):
                 o, r = c.get("omsattning_msek"), c.get("resultat_msek")
                 return (r / o * 100) if (o and r is not None) else 999
-            survivors.sort(key=_margin)
-            survivors = survivors[:int(n_companies)]
+            survivors.sort(key=_margin)      # svagast lönsamhet först (bäst IHA-läge)
+            pool = survivors
+            found_n, in_bransch_n = len(found), len(in_bransch)
 
-            prog2 = st.progress(0.0, text="Läser varulager per bolag...")
-            for i, c in enumerate(survivors):
-                try:
-                    fin = allabolag.get_financials(orgnr=c.get("orgnr", "")) if c.get("orgnr") else {}
-                    if fin:
-                        fin["website"] = fin.get("website") or c.get("website", "")
-                        fin["bransch"] = fin.get("bransch") or c.get("bransch", "")
-                        fins.append(fin)
-                except Exception:
-                    pass
-                prog2.progress((i + 1) / max(1, len(survivors)),
-                               text=f"Läst {i + 1}/{len(survivors)} bolag")
-
-        res = screener.screen_companies(
-            fins, oms_min=oms_min, oms_max=oms_max, max_anstallda=int(max_anstallda),
-            min_lagerandel=min_lagerandel, max_marginal=max_marginal, hard_margin=hard_margin,
-        )
-        res["found"] = len(found)
-        res["survivors"] = len(fins)
-        res["in_bransch"] = res_funnel[1] if res_funnel else None
-        # Spara vald bransch (bara relevant i segmenterings-läget) för diagnostik.
-        res["bransch_val"] = "" if (list_mode or fritext.strip()) else bransch_val
-        st.session_state["screen_result"] = res
+        # Cacha hela poolen + funnel så vi kan "granska fler" och om-filtrera utan
+        # att svepa om. Djupläs sedan bara första batchen (slidern).
+        st.session_state["screen_pool"] = pool
+        st.session_state["screen_funnel"] = {
+            "found": found_n, "in_bransch": in_bransch_n,
+            "bransch_val": "" if (list_mode or fritext.strip()) else bransch_val,
+        }
+        batch = pool[:int(n_companies)]
+        st.session_state["screen_fins"] = _deep_read_candidates(batch)
+        st.session_state["screen_read"] = len(batch)
+        _rescreen(oms_min, oms_max, max_anstallda, min_lagerandel, max_marginal, hard_margin)
 
     res = st.session_state.get("screen_result")
     if res:
@@ -234,9 +232,11 @@ def render():
             st.caption(f"ℹ️ {_hidden} bolag dolda — finns redan i dina leads eller pipeline.")
         bransch_steg = (f"→ {res['in_bransch']} i rätt bransch "
                         if res.get("in_bransch") is not None else "")
+        _pool_total = res.get("pool_total", 0)
+        _read = res.get("read", 0)
         st.caption(f"{res.get('found', 0)} bolag i storleksbandet {bransch_steg}"
-                   f"→ {res.get('survivors', 0)} djuplästa (bokslut) · "
-                   f"{len(res['rejected'])} föll på lagerandel/storlek · "
+                   f"→ {_pool_total} klarade grovfiltret (storlek/marginal) "
+                   f"→ **{_read} djuplästa** · {len(res['rejected'])} föll på lagerandel/storlek · "
                    f"{len(res['no_data'])} saknade data. "
                    f"Rankade på IHA-score (mest bundet kapital + svagast lönsamhet först).")
 
@@ -248,6 +248,29 @@ def render():
                 f"⚠️ Branschfiltret **{res['bransch_val']}** matchade bara {_ib} av "
                 f"{_found} bolag — **det är flaskhalsen, inte dina siffror**. Prova "
                 f"**Alla lager-tunga branscher** för bredast nät, eller byt/utöka län.")
+
+        # Fortsätt utan att svepa om: djupläs nästa batch, eller om-filtrera direkt.
+        bc1, bc2 = st.columns(2)
+        with bc1:
+            _kvar = _pool_total - _read
+            if _kvar > 0:
+                if st.button(f"🔎 Granska fler bolag (nästa {min(int(n_companies), _kvar)} "
+                             f"av {_kvar} kvar)", use_container_width=True):
+                    nxt = st.session_state["screen_pool"][_read:_read + int(n_companies)]
+                    st.session_state["screen_fins"] += _deep_read_candidates(nxt)
+                    st.session_state["screen_read"] = _read + len(nxt)
+                    _rescreen(oms_min, oms_max, max_anstallda, min_lagerandel,
+                              max_marginal, hard_margin)
+                    st.rerun()
+            else:
+                st.caption(f"✔️ Alla {_pool_total} bolag i bransch/band är djuplästa.")
+        with bc2:
+            if st.button("♻️ Uppdatera med nuvarande filter", use_container_width=True,
+                         help="Kör om lagerandel/marginal-filtret på redan hämtade bolag "
+                              "— direkt, ingen ny sökning."):
+                _rescreen(oms_min, oms_max, max_anstallda, min_lagerandel,
+                          max_marginal, hard_margin)
+                st.rerun()
 
         if q:
             st.dataframe(pd.DataFrame([
