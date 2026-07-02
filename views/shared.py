@@ -109,12 +109,24 @@ def render_email_composer(uid: str, to_default: str, draft_kwargs: dict,
         opts = [to_default] + opts
     opts = list(dict.fromkeys(o for o in opts if o))
 
+    # Prefill "Till" robust: seeda session_state med den sparade/kända adressen
+    # och läk tomt eller ogiltigt värde. (Bara `value=` räcker inte — Streamlit
+    # ignorerar det så fort widget-nyckeln finns i session_state, vilket gör att
+    # fältet annars fastnar tomt efter första interaktionen och man måste skriva
+    # in adressen igen.)
+    to_key = f"to_{uid}"
+    default_addr = opts[0] if opts else (to_default or "")
+
     if len(opts) > 1:
         namn = draft_kwargs.get("namn", "")
+        if st.session_state.get(to_key) not in opts:
+            st.session_state[to_key] = default_addr
         st.selectbox("Till", opts, format_func=lambda e: f"{namn} — {e}" if namn else e,
-                     key=f"to_{uid}")
+                     key=to_key)
     else:
-        st.text_input("Till", value=opts[0] if opts else to_default, key=f"to_{uid}")
+        if not st.session_state.get(to_key) and default_addr:
+            st.session_state[to_key] = default_addr
+        st.text_input("Till", key=to_key)
 
     # Nyhetsresearch-toggle (visas bara om Apify är konfigurerat)
     use_research = False
