@@ -419,6 +419,89 @@ def find_company_website(bolag: str) -> str:
     return ""
 
 
+# ── Gratis hemsidegissning (ingen Apify) ────────────────────────────────────────
+
+# Rena bolagsformer som aldrig är del av en domän — tas bort ur namnet.
+_LEGAL_TOKENS = frozenset({
+    "ab", "aktiebolag", "hb", "handelsbolag", "kb", "kommanditbolag",
+    "ekonomisk", "forening", "ideell", "asa", "oy", "as", "gmbh", "ltd",
+    "inc", "plc", "bv", "publ",
+})
+# Sidor som visar att domänen är parkerad/till salu → ingen riktig hemsida.
+_PARKED_HINTS = (
+    "this domain is for sale", "köp denna domän", "domänen är till salu",
+    "parkerad", "domain parking", "buy this domain", "sedoparking",
+    "domännamnet är ledigt",
+)
+# För generiska/geografiska ord ensamma → domänen blir nästan alltid fel bolag
+# (t.ex. "Swedish Microwave" → swedish.com). Används aldrig som ensam stam.
+_GENERIC_WORDS = frozenset({
+    "swedish", "sweden", "nordic", "nordics", "scandinavia", "scandinavian",
+    "european", "europe", "euro", "scan", "global", "international", "svenska",
+})
+
+
+def _company_domain_stems(bolag: str) -> list[str]:
+    """Troliga domän-stammar från ett bolagsnamn, mest sannolik först."""
+    words = [w for w in re.split(r"[^a-z0-9]+", _ascii_name(bolag)) if w]
+    words = [w for w in words if w not in _LEGAL_TOKENS] or words
+    stems: list[str] = []
+    if words:
+        if words[0] not in _GENERIC_WORDS and len(words[0]) >= 3:
+            stems.append(words[0])             # 'rottne'  (vanligast för SME)
+        if len(words) >= 2:
+            stems.append(words[0] + words[1])  # 'rottneindustri'
+            stems.append("".join(words[:-1]))  # allt utom sista beskrivande ordet
+        stems.append("".join(words))           # alla ord hopslagna
+        stems.append("-".join(words))          # bindestreck
+    # Rensa: minst 3 tecken och aldrig ett ensamt generiskt ord (t.ex. 'swedish').
+    return list(dict.fromkeys(
+        s for s in stems if len(s) >= 3 and s not in _GENERIC_WORDS))
+
+
+def _probe(url: str, timeout: int = 5) -> str:
+    """Snabb HTTP-hämtning (kort timeout) för domängissning. Tom sträng vid fel."""
+    try:
+        r = requests.get(url, timeout=timeout, allow_redirects=True, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; LogisticsDoctorBot/1.0)"})
+        return r.text if (r.status_code == 200 and r.text) else ""
+    except Exception:
+        return ""
+
+
+def _page_matches_company(html: str, bolag: str) -> bool:
+    """True om sidan rimligt hör till bolaget (och inte är en parkerad domän)."""
+    low = html.lower()
+    if any(bad in low for bad in _PARKED_HINTS):
+        return False
+    tokens = [w for w in re.split(r"[^a-z0-9]+", _ascii_name(bolag))
+              if len(w) >= 4 and w not in _LEGAL_TOKENS]
+    return any(t in low for t in tokens[:2]) if tokens else True
+
+
+def guess_company_website(bolag: str, max_probes: int = 10) -> str:
+    """
+    Gissa och VERIFIERA ett bolags hemsida GRATIS (ingen Apify): prova troliga
+    domäner ur namnet och läs dem med vanlig HTTP. Returnerar en URL bara om
+    sidan svarar OCH rimligt matchar bolaget, annars "". Perfekt för svenska SME
+    vars domän matchar bolagsnamnet.
+    """
+    bolag = (bolag or "").strip()
+    if not bolag:
+        return ""
+    probes = 0
+    for stem in _company_domain_stems(bolag):
+        for tld in (".se", ".com", ".nu"):
+            if probes >= max_probes:
+                return ""
+            url = f"https://www.{stem}{tld}"
+            probes += 1
+            html = _probe(url)
+            if html and _page_matches_company(html, bolag):
+                return url
+    return ""
+
+
 def _rank_emails(emails: list[str], website: str) -> list[str]:
     domain = urllib.parse.urlparse(_normalize_url(website)).netloc.lower().replace("www.", "")
 
@@ -456,7 +539,8 @@ def find_emails(website: str = "", bolag: str = "", render: bool = False) -> dic
     """
     website = _normalize_url(website)
     if not website and bolag:
-        website = find_company_website(bolag)
+        # Gratis gissning först (ingen Apify), betald Google-sökning bara som fallback.
+        website = guess_company_website(bolag) or find_company_website(bolag)
     if not website:
         return {"website": "", "emails": [], "best": "", "guessed": "", "rendered": False}
 
