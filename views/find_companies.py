@@ -210,6 +210,8 @@ def render():
         res["found"] = len(found)
         res["survivors"] = len(fins)
         res["in_bransch"] = res_funnel[1] if res_funnel else None
+        # Spara vald bransch (bara relevant i segmenterings-läget) för diagnostik.
+        res["bransch_val"] = "" if (list_mode or fritext.strip()) else bransch_val
         st.session_state["screen_result"] = res
 
     res = st.session_state.get("screen_result")
@@ -237,6 +239,15 @@ def render():
                    f"{len(res['rejected'])} föll på lagerandel/storlek · "
                    f"{len(res['no_data'])} saknade data. "
                    f"Rankade på IHA-score (mest bundet kapital + svagast lönsamhet först).")
+
+        # Diagnos: peka ut branschfiltret som flaskhals när det matchar nästan inget.
+        _ib, _found = res.get("in_bransch"), res.get("found") or 0
+        if (res.get("bransch_val") and _ib is not None and _found >= 50
+                and _ib <= max(3, 0.03 * _found)):
+            st.warning(
+                f"⚠️ Branschfiltret **{res['bransch_val']}** matchade bara {_ib} av "
+                f"{_found} bolag — **det är flaskhalsen, inte dina siffror**. Prova "
+                f"**Alla lager-tunga branscher** för bredast nät, eller byt/utöka län.")
 
         if q:
             st.dataframe(pd.DataFrame([
