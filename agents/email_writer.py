@@ -299,6 +299,7 @@ def generate_email(
     website: str = "",
     history=None,
     foretagsinfo: str = "",
+    followup_steg: int = 0,
 ) -> dict:
     """
     Generera ett rollanpassat, FÖRETAGSUNIKT säljmejl.
@@ -420,8 +421,16 @@ def generate_email(
         f"bolag — helst en flerårstrend ur årsredovisningen (t.ex. att lagret vuxit "
         f"medan omsättningen fallit). Väv gärna in vad de tillverkar. ALDRIG en "
         f"generisk branschmening som kunde gått till vilket bolag som helst.\n"
-        f"Returnera JSON."
     )
+    if followup_steg:
+        user_msg += (
+            f"\nDETTA ÄR EN UPPFÖLJNING (påminnelse nr {followup_steg}) — mottagaren "
+            f"fick redan ett första mejl utan att svara. Håll det KORT (3–4 meningar), "
+            f"öppna med en artig knuff ('hörde inte av dig — vill inte att det här ska "
+            f"falla mellan stolarna'), ge EN ny konkret vinkel/värde (t.ex. en till "
+            f"siffra ur trenden eller kostnaden av att vänta), och avsluta med samma "
+            f"lätta 15-min-fråga. Upprepa inte hela det första mejlet.\n")
+    user_msg += "Returnera JSON."
 
     if language == "en":
         user_msg += "\nOBS: Skriv mejlet på ENGELSKA (bolaget verkar internationellt)."
@@ -459,3 +468,60 @@ def generate_email(
         "confidence": confidence,
         "review_flag": review_flag,
     }
+
+
+_CALL_SYSTEM = """Du skriver ett kort TELEFONMANUS åt David Leifsson (Logistics Doctor) inför
+ett uppföljningssamtal till ett bolag han redan mejlat om IHA (lager-/kapitalbindningsanalys).
+Manuset ska vara pratbart, inte ett brev. Svenska, du-tilltal, avslappnat och rakt.
+
+STRUKTUR (använd exakt dessa rubriker):
+Öppning: en mening som presenterar David + varför han ringer (kopplat till mejlet).
+Kroken: 1–2 företagsunika, verifierbara siffror om JUST detta bolag (helst flerårstrend).
+Frågan: be om ett kort möte (15 min) — mjukt och konkret.
+Om invändning: 2 korta repliker på 'har inte tid' / 'inte intresserad' / 'skicka info'.
+
+REGLER: Max ~120 ord totalt. Hitta ALDRIG på siffror. Inga utropstecken. Punktlista där det
+passar. Skriv så David kan läsa det rakt av i luren."""
+
+
+def generate_call_script(bolag, namn="", titel="", bransch="", orgnr="", website="",
+                         lagerandel=None, varulager_msek=None, omsattning_msek=None) -> str:
+    """Kort, företagsunikt telefonmanus för ett uppföljningssamtal. '' vid fel."""
+    # Samma berikning som mejlet: flerårstrend + vad bolaget gör.
+    history = None
+    if orgnr:
+        try:
+            from integrations import allabolag as _ab
+            history = (_ab.get_financials(orgnr=orgnr) or {}).get("history")
+        except Exception:
+            history = None
+    trends = _financial_trends(history)
+    profil = _company_profile(website)
+    dos = _dos(varulager_msek, omsattning_msek)
+    fornamn = _first_name(namn) or "kontaktpersonen"
+
+    fakta = [f"Bolag: {bolag}", f"Person att ringa: {namn or 'okänd'} ({titel or 'okänd roll'})"]
+    if bransch:
+        fakta.append(f"Bransch: {bransch}")
+    if varulager_msek is not None:
+        fakta.append(f"Varulager: {varulager_msek} MSEK")
+    if lagerandel is not None:
+        fakta.append(f"Lagerandel: {lagerandel}%")
+    if dos is not None:
+        fakta.append(f"Days of Stock: ~{dos} dagar")
+
+    krok = ("\nFÖRETAGSUNIKA KROKAR (använd 1–2, ordagrant):\n"
+            + "\n".join(f"  - {t}" for t in trends)) if trends else ""
+    prof = (f"\nVad bolaget gör (hemsidan): {profil[:500]}") if profil else ""
+
+    user_msg = (f"Skriv telefonmanus för uppföljningssamtal.\n\nFAKTA:\n"
+                + "\n".join(f"  {f}" for f in fakta) + krok + prof
+                + f"\n\nTilltala personen '{fornamn}'. Returnera bara manuset (ren text).")
+    try:
+        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        resp = client.messages.create(
+            model=MODEL, max_tokens=500, system=_CALL_SYSTEM,
+            messages=[{"role": "user", "content": user_msg}])
+        return resp.content[0].text.strip()
+    except Exception:
+        return ""

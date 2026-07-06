@@ -5,7 +5,7 @@ import streamlit as st
 from agents import inbox_watcher
 from agents.followup import get_followups_due, process_close
 from database import supabase_client as db
-from views.shared import person_link_inline
+from views.shared import person_link_inline, render_email_composer, log_sent_email
 
 
 def render():
@@ -196,51 +196,11 @@ def _render_followups_tab():
         st.success("✅ Inga uppföljningar att göra idag!")
 
     if followups:
-        st.subheader(f"📬 {len(followups)} uppföljningar att skicka")
+        st.subheader(f"📬 {len(followups)} kontakter att följa upp")
+        st.caption("Mejla igen, ring med manus, eller markera hur du följt upp. "
+                   "Varje åtgärd loggas och flyttar kontakten framåt.")
         for item in followups:
-            p = item["prospect"]
-            is_f2 = item["action"] == "followup_2"
-            action_label = "Uppföljning 2 — dag 7" if is_f2 else "Uppföljning 1 — dag 3"
-            with st.container(border=True):
-                st.markdown(f"### {p['namn']} @ {p.get('bolag','')}")
-                st.caption(action_label + " · "
-                           + person_link_inline(p.get("namn", ""), p.get("bolag", ""),
-                                                p.get("linkedin_url", "")))
-
-                # Dag 7: visa telefon + ringpåminnelse om det finns
-                if is_f2:
-                    telefon = p.get("telefon", "")
-                    if telefon:
-                        st.info(f"📞 **Ring upp nu?** {p.get('namn','').split()[0]} "
-                                f"på **{telefon}** — du kan ringa parallellt med "
-                                f"eller istället för uppföljningsmejlet.")
-                    else:
-                        st.caption("📞 Inget telefonnummer registrerat — "
-                                   "lägg till i Översikt om du hittar det.")
-
-                st.code(item["message"], language=None)
-                b1, b2 = st.columns([2, 1])
-                with b1:
-                    if st.button("✅ Mejl skickat", key=f"fsent_{p['id']}",
-                                 type="primary", use_container_width=True):
-                        try:
-                            dm = db.insert_dm(p["id"], item["message"], typ=item["action"])
-                            db.mark_dm_skickad(dm["id"])
-                            db.update_prospect_status(p["id"], item["action"])
-                            st.success("Markerat!")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Fel: {e}")
-                with b2:
-                    if st.button("❌ Avböj", key=f"freject_{p['id']}",
-                                 use_container_width=True,
-                                 help="Inte intresserad — ta bort ur uppföljningskön."):
-                        try:
-                            db.update_prospect_status(p["id"], "avbojd")
-                            st.success("Avböjd.")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Fel: {e}")
+            _render_followup_card(item)
 
     if closes:
         st.divider()
@@ -254,6 +214,130 @@ def _render_followups_tab():
                     try:
                         process_close(p["id"])
                         st.success("Stängd.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Fel: {e}")
+
+
+def _render_followup_card(item):
+    """En uppföljning: mejla igen / ringa med manus / markera — alltid bekräftat."""
+    from integrations import email_sender
+    from agents import email_writer
+
+    p = item["prospect"]
+    pid = p["id"]
+    step = 2 if item["action"] == "followup_2" else 1
+    label = f"Uppföljning {step} — dag {'7' if step == 2 else '3'}"
+    telefon = (p.get("telefon") or "").strip()
+    email = (p.get("email") or "").strip()
+    fornamn = (p.get("namn") or "").split()[0] if p.get("namn") else "kontakten"
+
+    def _advance(logmsg, typ, new_status):
+        """Logga åtgärden + flytta kontakten framåt, sedan uppdatera vyn."""
+        try:
+            dm = db.insert_dm(pid, logmsg, typ=typ)
+            db.mark_dm_skickad(dm["id"])
+            db.update_prospect_status(pid, new_status)
+            st.success("✅ Klart — loggat och uppdaterat.")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Fel: {e}")
+
+    with st.container(border=True):
+        st.markdown(f"### {p['namn']} @ {p.get('bolag','')}")
+        st.caption(f"{label} · Kontaktad, inget svar ännu · "
+                   + person_link_inline(p.get("namn", ""), p.get("bolag", ""),
+                                        p.get("linkedin_url", "")))
+
+        tab_mail, tab_call, tab_other = st.tabs(
+            ["📧 Mejla uppföljning", "📞 Ring", "✔️ Markera manuellt"])
+
+        # ── Mejla igen (företagsunikt uppföljningsmejl) ──
+        with tab_mail:
+            if email:
+                to, subj, body, send = render_email_composer(
+                    f"fu_{pid}", email,
+                    dict(bolag=p.get("bolag", ""), namn=p.get("namn", ""),
+                         titel=p.get("titel", ""), bransch=p.get("bransch", ""),
+                         lagerandel=p.get("lagerandel"), varulager_msek=p.get("varulager"),
+                         omsattning_msek=p.get("omsattning"), orgnr=p.get("orgnr", ""),
+                         website=p.get("website", ""), followup_steg=step),
+                    to_options=[email])
+                if send:
+                    ok, err = email_sender.send_email(to, subj, body)
+                    if ok:
+                        log_sent_email(pid, to, subj, body)
+                        db.update_prospect_status(pid, item["action"])
+                        st.success(f"✅ Uppföljningsmejl skickat till {to}.")
+                        st.rerun()
+                    else:
+                        st.error(err)
+            else:
+                st.caption("Ingen e-post sparad på kontakten — lägg till den i 📊 Översikt, "
+                           "eller följ upp via Ring/LinkedIn.")
+
+        # ── Ring, med företagsunikt manus + bekräftat utfall ──
+        with tab_call:
+            if telefon:
+                st.markdown(f"## 📞 [{telefon}](tel:{telefon})")
+                st.caption(f"Ring {fornamn}. Tryck **Skriv ringmanus** för ett kort, "
+                           "företagsunikt manus att läsa rakt av.")
+                skey = f"call_script_{pid}"
+                if st.button("📝 Skriv ringmanus", key=f"gen_call_{pid}"):
+                    with st.spinner("Skriver företagsunikt ringmanus..."):
+                        st.session_state[skey] = email_writer.generate_call_script(
+                            bolag=p.get("bolag", ""), namn=p.get("namn", ""),
+                            titel=p.get("titel", ""), bransch=p.get("bransch", ""),
+                            orgnr=p.get("orgnr", ""), website=p.get("website", ""),
+                            lagerandel=p.get("lagerandel"), varulager_msek=p.get("varulager"),
+                            omsattning_msek=p.get("omsattning"))
+                if st.session_state.get(skey):
+                    st.text_area("Ringmanus", value=st.session_state[skey], height=230,
+                                 key=f"call_area_{pid}")
+                st.divider()
+                utfall = st.radio(
+                    "Hur gick samtalet?",
+                    ["Bokade möte", "Intresserad – följ upp senare",
+                     "Inget svar / röstbrevlåda", "Inte intresserad"],
+                    key=f"call_out_{pid}")
+                note = st.text_input("Anteckning (valfritt)", key=f"call_note_{pid}",
+                                     placeholder="t.ex. ringer tillbaka nästa vecka")
+                if st.button("✅ Bekräfta samtal", key=f"call_confirm_{pid}", type="primary"):
+                    logmsg = f"📞 Ringde {telefon}. Utfall: {utfall}." + (f" {note}" if note else "")
+                    new_status = ("mote_bokat" if utfall == "Bokade möte"
+                                  else "avbojd" if utfall == "Inte intresserad"
+                                  else item["action"])
+                    _advance(logmsg, "call", new_status)
+            else:
+                st.caption("📞 Inget telefonnummer sparat på kontakten.")
+                newtel = st.text_input("Lägg till telefonnummer", key=f"add_tel_{pid}",
+                                       placeholder="+46 70 123 45 67")
+                if st.button("💾 Spara nummer", key=f"save_tel_{pid}"):
+                    if newtel.strip():
+                        try:
+                            db.update_prospect(pid, {"telefon": newtel.strip()})
+                            st.success("Sparat — öppna fliken igen för att ringa.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Fel: {e}")
+
+        # ── Markera manuellt (följt upp utanför appen) / avböj ──
+        with tab_other:
+            st.caption("Följde du upp på annat sätt (LinkedIn, mejl i din klient)? "
+                       "Kopiera vid behov och bekräfta här:")
+            st.code(item["message"], language=None)
+            c1, c2 = st.columns(2)
+            with c1:
+                if st.button("✅ Jag har följt upp", key=f"fu_done_{pid}",
+                             type="primary", use_container_width=True):
+                    _advance(item["message"], item["action"], item["action"])
+            with c2:
+                if st.button("❌ Inte intresserad", key=f"freject_{pid}",
+                             use_container_width=True,
+                             help="Ta bort ur uppföljningskön."):
+                    try:
+                        db.update_prospect_status(pid, "avbojd")
+                        st.success("Avböjd.")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Fel: {e}")
