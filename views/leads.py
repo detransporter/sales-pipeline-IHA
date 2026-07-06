@@ -353,7 +353,8 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                              titel=l.get("titel", ""), bransch=l.get("bransch", ""),
                              lagerandel=l.get("lagerandel"),
                              varulager_msek=l.get("varulager"),
-                             omsattning_msek=l.get("omsattning")),
+                             omsattning_msek=l.get("omsattning"),
+                             orgnr=l.get("orgnr", ""), website=website),
                         to_options=all_emails)
                     if send:
                         ok, err = email_sender.send_email(to, subj, body)

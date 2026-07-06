@@ -226,6 +226,63 @@ def fetch_company_context(bolag: str, bransch: str = "") -> str:
         return ""
 
 
+# ── Företagsunik personalisering (Hormozi: 1–3 specifika fakta öppnar dörren) ──
+
+def _financial_trends(history: list[dict] | None) -> list[str]:
+    """
+    Gör flerårshistoriken (ur Bolagsverkets årsredovisningar via Allabolag) till
+    konkreta, verifierbara krokar. Starkaste IHA-signalen (lager upp + omsättning
+    ner) läggs först. Tom lista om historik saknas.
+    """
+    rows = [h for h in (history or [])
+            if h.get("omsattning_msek") or h.get("varulager_msek")]
+    if len(rows) < 2:
+        return []
+    new, old = rows[0], rows[-1]                 # nyast först i listan
+    yn, yo = new.get("år", ""), old.get("år", "")
+    vn, vo = new.get("varulager_msek"), old.get("varulager_msek")
+    on, oo = new.get("omsattning_msek"), old.get("omsattning_msek")
+    rn = new.get("resultat_msek")
+    facts: list[str] = []
+
+    # 1. Varulagertillväxt
+    if vn and vo and vo > 0:
+        pct = round((vn - vo) / vo * 100)
+        if pct >= 15:
+            facts.append(f"Varulagret växte {pct}% ({vo}→{vn} MSEK) mellan {yo} och {yn}.")
+    # 2. Divergens — lager upp MEDAN omsättning ner (lägg först, starkast)
+    if vn and vo and on and oo and vn > vo and on < oo:
+        facts.insert(0, f"Lagret växer medan försäljningen faller: varulager {vo}→{vn} MSEK "
+                        f"men omsättning {oo}→{on} MSEK ({yo}→{yn}) — klassiskt tecken på "
+                        f"kapital som fastnar i hyllan.")
+    # 3. Lagerandel-förändring
+    if vn and on and vo and oo and on > 0 and oo > 0:
+        la_new, la_old = round(vn / on * 100), round(vo / oo * 100)
+        if la_new - la_old >= 5:
+            facts.append(f"Lagerandelen steg från {la_old}% till {la_new}% av omsättningen "
+                         f"({yo}→{yn}).")
+    # 4. Resultatsving (från vinst till svagare/förlust)
+    results = [(h.get("år"), h.get("resultat_msek")) for h in rows
+               if h.get("resultat_msek") is not None]
+    if rn is not None and results:
+        best_y, best_r = max(results, key=lambda t: t[1])
+        if best_r - rn >= 5 and best_r > 0:
+            facts.append(f"Resultatet vände från +{best_r} MSEK ({best_y}) till "
+                         f"{'+' if rn >= 0 else ''}{rn} MSEK ({yn}).")
+    return facts
+
+
+def _company_profile(website: str) -> str:
+    """Kort text om vad bolaget faktiskt gör, från deras hemsida (gratis). '' vid fel."""
+    if not website:
+        return ""
+    try:
+        from integrations import apify_research as _apify
+        return _apify.fetch_website_text(website, max_chars=1200).strip()
+    except Exception:
+        return ""
+
+
 # ── Huvudfunktion ──────────────────────────────────────────────────────────────
 
 def generate_email(
@@ -238,19 +295,39 @@ def generate_email(
     omsattning_msek=None,
     nyheter: str = "",
     language: str = "sv",
+    orgnr: str = "",
+    website: str = "",
+    history=None,
+    foretagsinfo: str = "",
 ) -> dict:
     """
-    Generera ett rollanpassat säljmejl.
+    Generera ett rollanpassat, FÖRETAGSUNIKT säljmejl.
+
+    Berikar automatiskt med flerårshistorik (Bolagsverkets årsredovisningar via
+    Allabolag, om orgnr ges) och vad bolaget gör (deras hemsida, om website ges)
+    → 1–3 verifierbara krokar som öppnar mejlet (Hormozi-personalisering).
 
     Returnerar:
       {subject, body, roll_spår, confidence, review_flag}
-
-    roll_spår   : 'vd' | 'cfo' | 'scm' | 'neutral'
-    confidence  : 'high' | 'medium' | 'low'
-    review_flag : True om mailet bör granskas manuellt innan det skickas
     """
     roll = _detect_role(titel)
+
+    # Berika: flerårstrend + företagsprofil → företagsunika krokar.
+    if history is None and orgnr:
+        try:
+            from integrations import allabolag as _ab
+            _fin = _ab.get_financials(orgnr=orgnr)
+            history = _fin.get("history") if _fin else None
+        except Exception:
+            history = None
+    trends = _financial_trends(history)
+    if not foretagsinfo and website:
+        foretagsinfo = _company_profile(website)
+
     confidence, review_flag = _confidence(titel, lagerandel, varulager_msek, nyheter)
+    # En flerårstrend är stark, verifierbar personalisering → hög confidence.
+    if trends:
+        confidence, review_flag = "high", False
     dos = _dos(varulager_msek, omsattning_msek)
 
     # ── Faktablock ────────────────────────────────────────────────────────────
@@ -312,15 +389,37 @@ def generate_email(
     else:
         nyhets_block = "\n(Inga bolagsspecifika nyheter hittades — använd siffrorna som trigger.)\n"
 
+    # ── Företagsunika krokar + profil ─────────────────────────────────────────
+    if trends:
+        krok_block = (
+            "\nFÖRETAGSUNIKA KROKAR ur deras årsredovisningar (Bolagsverket, flera år) "
+            "— ÖPPNA mejlet med 1–2 av dessa, ordagrant och verifierbart. Detta är det "
+            "viktigaste i hela mejlet:\n"
+            + "\n".join(f"  - {t}" for t in trends) + "\n")
+    else:
+        krok_block = ("\n(Ingen flerårstrend tillgänglig — öppna med senaste årets "
+                      "lagerandel/DOS som företagsspecifik krok.)\n")
+    profil_block = ""
+    if foretagsinfo:
+        profil_block = (
+            "\nOM BOLAGET (text från deras hemsida — referera KONKRET vad de "
+            "tillverkar/säljer så det märks att mejlet är skrivet till just dem; "
+            "hitta inte på):\n" + foretagsinfo[:1000] + "\n")
+
     # ── Bygg user-prompt ──────────────────────────────────────────────────────
     user_msg = (
-        f"Skriv ett rollanpassat kall-mejl baserat på nedanstående fakta.\n\n"
+        f"Skriv ett rollanpassat, FÖRETAGSUNIKT kall-mejl baserat på fakta nedan.\n\n"
         f"FAKTA OM BOLAGET (använd, hitta inte på mer):\n"
         + "\n".join(f"  {f}" for f in fakta)
-        + f"\n\n{mottagare}\n"
+        + f"\n{krok_block}{profil_block}"
+        + f"\n{mottagare}\n"
         f"Hälsning att använda: {halsning}\n"
         f"{nyhets_block}\n"
         f"ROLLSPÅR: {roll.upper()} — följ instruktionerna för detta spår exakt.\n"
+        f"KRAV: Första meningen ska vara en företagsunik iakttagelse om JUST detta "
+        f"bolag — helst en flerårstrend ur årsredovisningen (t.ex. att lagret vuxit "
+        f"medan omsättningen fallit). Väv gärna in vad de tillverkar. ALDRIG en "
+        f"generisk branschmening som kunde gått till vilket bolag som helst.\n"
         f"Returnera JSON."
     )
 

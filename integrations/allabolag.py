@@ -275,6 +275,22 @@ def parse_company(html: str) -> dict:
         accounts = {r.get("code"): r.get("amount")
                     for r in (latest.get("accounts") or []) if isinstance(r, dict)}
 
+    # Flerårshistorik (nyast först) — bränslet för företagsunik personalisering
+    # (t.ex. "varulager växte 96% på fyra år medan omsättningen föll").
+    history: list[dict] = []
+    for yr in accounts_list[:6]:
+        d = {r.get("code"): r.get("amount")
+             for r in (yr.get("accounts") or []) if isinstance(r, dict)}
+        oms = _to_float(d.get(CODE_NETTOOMS))
+        vl = _to_float(d.get(CODE_VARULAGER))
+        res = _to_float(d.get(CODE_RESULTAT))
+        history.append({
+            "år": str(yr.get("year") or yr.get("period") or ""),
+            "omsattning_msek": round(oms / 1000, 1) if oms else None,
+            "varulager_msek": round(vl / 1000, 1) if vl else None,
+            "resultat_msek": round(res / 1000, 1) if res is not None else None,
+        })
+
     nettooms_tkr = _to_float(accounts.get(CODE_NETTOOMS))
     if nettooms_tkr is None:
         nettooms_tkr = _to_float(company.get("revenue"))
@@ -306,6 +322,7 @@ def parse_company(html: str) -> dict:
         "varulager_msek": round(varulager_tkr / 1000, 1) if varulager_tkr else 0.0,
         "resultat_msek": round(resultat_tkr / 1000, 1) if resultat_tkr is not None else None,
         "anstallda": anstallda,
+        "history": history,
         "_nettooms_tkr": nettooms_tkr,
         "_varulager_tkr": varulager_tkr,
         "_resultat_tkr": resultat_tkr,
