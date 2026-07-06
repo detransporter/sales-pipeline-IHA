@@ -1,5 +1,7 @@
 """💬 Svar & uppföljning — inkomna svar + uppföljningar (sammanslaget)."""
 
+from datetime import date, timedelta
+
 import streamlit as st
 
 from agents import inbox_watcher
@@ -232,13 +234,17 @@ def _render_followup_card(item):
     email = (p.get("email") or "").strip()
     fornamn = (p.get("namn") or "").split()[0] if p.get("namn") else "kontakten"
 
-    def _advance(logmsg, typ, new_status):
-        """Logga åtgärden + flytta kontakten framåt, sedan uppdatera vyn."""
+    def _advance(logmsg, typ, new_status, meeting_date=None):
+        """Logga åtgärden + flytta kontakten framåt (+ ev. boka möte), uppdatera vyn."""
         try:
             dm = db.insert_dm(pid, logmsg, typ=typ)
             db.mark_dm_skickad(dm["id"])
             db.update_prospect_status(pid, new_status)
-            st.success("✅ Klart — loggat och uppdaterat.")
+            if meeting_date is not None:
+                db.insert_meeting(pid, meeting_date.isoformat())
+                st.success(f"✅ Möte bokat {meeting_date} — syns nu under 📅 Möten.")
+            else:
+                st.success("✅ Klart — loggat och uppdaterat.")
             st.rerun()
         except Exception as e:
             st.error(f"Fel: {e}")
@@ -302,12 +308,18 @@ def _render_followup_card(item):
                     key=f"call_out_{pid}")
                 note = st.text_input("Anteckning (valfritt)", key=f"call_note_{pid}",
                                      placeholder="t.ex. ringer tillbaka nästa vecka")
+                mote_datum = None
+                if utfall == "Bokade möte":
+                    mote_datum = st.date_input(
+                        "Mötesdatum", value=date.today() + timedelta(days=3),
+                        key=f"call_date_{pid}",
+                        help="Skapar en mötespost automatiskt under 📅 Möten.")
                 if st.button("✅ Bekräfta samtal", key=f"call_confirm_{pid}", type="primary"):
                     logmsg = f"📞 Ringde {telefon}. Utfall: {utfall}." + (f" {note}" if note else "")
                     new_status = ("mote_bokat" if utfall == "Bokade möte"
                                   else "avbojd" if utfall == "Inte intresserad"
                                   else item["action"])
-                    _advance(logmsg, "call", new_status)
+                    _advance(logmsg, "call", new_status, meeting_date=mote_datum)
             else:
                 st.caption("📞 Inget telefonnummer sparat på kontakten.")
                 newtel = st.text_input("Lägg till telefonnummer", key=f"add_tel_{pid}",
