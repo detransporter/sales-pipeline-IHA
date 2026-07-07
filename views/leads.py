@@ -52,23 +52,28 @@ def render():
             if st.button(f"🌐 Hitta hemsidor + e-post gratis ({len(no_web)})",
                          type="primary", key="bulk_web"):
                 prog = st.progress(0.0)
-                web_n = mail_n = 0
+                web_n = mail_n = tel_n = 0
                 for i, l in enumerate(no_web):
                     try:
                         web = _apify.guess_company_website(l.get("bolag", ""))
                         if web:
                             contact = _apify.find_emails(web, l.get("bolag", ""), render=False)
                             email = contact.get("best", "") or contact.get("guessed", "")
+                            tel = contact.get("telefon", "")
                             contact_cache[l["id"]] = {**contact, "website": web}
-                            db.update_lead_suggestion_contact(l["id"], email=email, website=web)
+                            db.update_lead_suggestion_contact(l["id"], email=email,
+                                                              website=web, telefon=tel)
                             web_n += 1
                             if contact.get("best"):
                                 mail_n += 1
+                            if tel:
+                                tel_n += 1
                     except Exception:
                         pass
                     prog.progress((i + 1) / len(no_web))
                 st.success(f"Hittade hemsida för {web_n} av {len(no_web)} bolag "
-                           f"({mail_n} med publik e-post) — gratis. Verifiera innan du mejlar.")
+                           f"({mail_n} med e-post, {tel_n} med telefon) — gratis. "
+                           f"Verifiera innan du mejlar/ringer.")
                 st.rerun()
 
         # ── BETALT: hitta personer via LinkedIn (drar Apify-krediter) ───────
@@ -149,6 +154,7 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
     website = cached.get("website") or l.get("website") or ""
     emails = cached.get("emails") or ([l["email"]] if l.get("email") else [])
     guessed = cached.get("guessed") or ""
+    telefon = cached.get("telefon") or l.get("telefon") or ""
 
     with st.container(border=True):
         cols = st.columns([3, 1, 1, 1, 1])
@@ -170,8 +176,8 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
             elif guessed:
                 st.markdown(f"✉️ {guessed}  ·  _kvalificerad gissning (ej verifierad)_")
                 st.code(guessed, language=None)
-            if l.get("telefon"):
-                st.markdown(f"📞 {l['telefon']}")
+            if telefon:
+                st.markdown(f"📞 [{telefon}](tel:{telefon})")
             if l.get("motivering"):
                 st.caption(l["motivering"])
             # E-postkandidater från senaste personsökning — väntar på val
@@ -225,10 +231,12 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                         contact_cache[lid] = contact
                         db.update_lead_suggestion_contact(
                             lid, email=contact.get("best", "") or contact.get("guessed", ""),
-                            website=contact.get("website", ""))
+                            website=contact.get("website", ""), telefon=contact.get("telefon", ""))
+                        _tel = contact.get("telefon", "")
                         if contact.get("best"):
                             via = " (via renderad sida)" if contact.get("rendered") else ""
-                            st.success(f"Hittade {len(contact['emails'])} adress(er){via}.")
+                            _telmsg = f" · 📞 {_tel}" if _tel else ""
+                            st.success(f"Hittade {len(contact['emails'])} adress(er){via}{_telmsg}.")
                         elif contact.get("guessed"):
                             st.info(f"Ingen publik adress — gissar {contact['guessed']} "
                                     "(verifiera innan du mejlar).")

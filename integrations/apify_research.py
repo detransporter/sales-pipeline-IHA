@@ -406,6 +406,49 @@ def _extract_emails_from_html(html: str) -> list[str]:
     return out
 
 
+# ── Telefonuttag (gratis, ur samma HTML som mejlen) ─────────────────────────────
+
+_TEL_HREF_RE = re.compile(r'href=["\']tel:([+0-9()\s\-.]{6,})["\']', re.IGNORECASE)
+# Svenska nummer i text: +46 eller 0, sedan 7–9 siffror med vanliga avskiljare.
+_PHONE_TEXT_RE = re.compile(
+    r'(?<![\w./-])(?:\+46[\s\-]?|0)(?:\d[\s\-.]?){6,9}\d(?![\w/])')
+
+
+def _clean_phone(raw: str) -> str:
+    """Normalisera ett rånummer. '' om det inte ser ut som ett riktigt telefonnr."""
+    s = re.sub(r"[^\d+]", "", raw or "")
+    if s.startswith("0046"):
+        s = "+46" + s[4:]
+    if s.startswith("+460"):            # redundant riktnolla efter landskod
+        s = "+46" + s[4:]
+    digits = re.sub(r"\D", "", s)
+    if not (8 <= len(digits) <= 12):
+        return ""
+    return s
+
+
+def _extract_phones(html: str) -> list[str]:
+    """Plocka telefonnummer ur HTML: tel:-länkar först, annars svenska textnummer."""
+    if not html:
+        return []
+    found = [_clean_phone(m) for m in _TEL_HREF_RE.findall(html)]
+    found = [f for f in found if f]
+    if not found:
+        found = [c for m in _PHONE_TEXT_RE.findall(html) if (c := _clean_phone(m))]
+    seen, out = set(), []
+    for p in found:
+        key = re.sub(r"\D", "", p)
+        if key not in seen:
+            seen.add(key)
+            out.append(p)
+
+    def _mobile_first(p):  # mobil (07 / +46 7x) före fast telefon
+        d = re.sub(r"\D", "", p)
+        return 0 if (d.startswith("467") or d.startswith("07")) else 1
+    out.sort(key=_mobile_first)
+    return out[:5]
+
+
 def find_company_website(bolag: str) -> str:
     """Hitta ett bolags hemsida via Google (hoppar sociala medier/register). '' om inget."""
     bolag = (bolag or "").strip()
@@ -579,6 +622,7 @@ def find_emails(website: str = "", bolag: str = "", render: bool = False) -> dic
         if h:
             plain.append(h)
     _harvest(plain)
+    all_html = list(plain)
 
     # Steg 2 — renderande fallback (kör JS) bara om plain gav noll OCH render begärts.
     rendered = False
@@ -588,8 +632,11 @@ def find_emails(website: str = "", bolag: str = "", render: bool = False) -> dic
         if blocks:
             rendered = True
             _harvest(blocks)
+            all_html.extend(blocks)
 
     emails = _rank_emails(emails, website)
+    # Telefon plockas gratis ur samma HTML (tel:-länkar prioriteras).
+    telefoner = _extract_phones("\n".join(all_html))
 
     # Fallback: ingen publik adress hittad → gissa info@bolagets-domän (vanligast i SME).
     guessed = ""
@@ -599,7 +646,9 @@ def find_emails(website: str = "", bolag: str = "", render: bool = False) -> dic
             guessed = f"info@{domain}"
 
     return {"website": website, "emails": emails[:10],
-            "best": emails[0] if emails else "", "guessed": guessed, "rendered": rendered}
+            "best": emails[0] if emails else "", "guessed": guessed,
+            "telefon": telefoner[0] if telefoner else "", "telefoner": telefoner,
+            "rendered": rendered}
 
 
 # ── E-postmönster-konstruktion (för namngiven person) ───────────────────────────
