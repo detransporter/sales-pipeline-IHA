@@ -421,6 +421,8 @@ def _clean_phone(raw: str) -> str:
         s = "+46" + s[4:]
     if s.startswith("+460"):            # redundant riktnolla efter landskod
         s = "+46" + s[4:]
+    if not (s.startswith("+") or s.startswith("0")):   # dialbart nr, inte t.ex. orgnr
+        return ""
     digits = re.sub(r"\D", "", s)
     if not (8 <= len(digits) <= 12):
         return ""
