@@ -24,12 +24,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MODEL = "claude-opus-4-8"
+# Fable 5 efter A/B-test 2026-07-08 (samma beslut som IHA:s outreach-roll):
+# vassare hook, bättre regelefterlevnad, mänskligare ton. ~1,50 kr/mejl.
+MODEL = "claude-fable-5"
 
 SIGNATURE = (
     "Vänliga hälsningar,\n"
     "David Leifsson\n"
     "Logistics Doctor\n"
+    "david.leifsson@barisab.com\n"
     "Tel: 0737168367\n"
     "LinkedIn: https://www.linkedin.com/in/davidleifsson/\n"
     "www.barisab.com"
@@ -128,40 +131,65 @@ gått till vilket bolag som helst är ett misslyckat mejl.
   till nästa nivå", "jag ville bara höra av mig", "spännande möjlighet", "win-win",
   "tveka inte att höra av dig".
 
-2) VÄRDEEKVATIONEN (nämn den ALDRIG vid namn i mejlet).
+2) MAX 3–4 SIFFROR TOTALT I HELA MEJLET.
+Faktablocket du får är kontext för DIG — inte en checklista att tömma i mejlet.
+Välj de 3–4 mest slagkraftiga siffrorna (helst en flerårstrend + ETT kronbelopp)
+och lämna resten. Fler siffror än så känns som en rapport, inte ett mejl.
+- Ett spann räknas som EN siffra (t.ex. "12–23 MSEK"). Årtal räknas inte.
+- Verbalisera hellre än sifferstapla: "över halva omsättningen" slår "58 %",
+  "lagret växte snabbare än försäljningen" kan ersätta ett procenttal.
+
+3) VÄRDEEKVATIONEN (nämn den ALDRIG vid namn i mejlet).
 Värde = (Drömresultat × Sannolikhet att lyckas) / (Tid × Ansträngning).
-Maximera täljaren, minimera nämnaren:
-- DRÖMRESULTAT i kronor: frigjort kapital + den lagerhållningskostnad/år som
-  försvinner. Rama in KOSTNADEN AV ATT INTE AGERA — pengarna kostar varje månad de
-  står kvar i hyllan. Använd det uppskattade frigörbara spannet du fått, tydligt
-  som estimat ("erfarenhetsmässigt sitter 15–30 % av lagervärdet...").
+Maximera täljaren, minimera nämnaren — men fördela över SEPARATA stycken (se
+struktur nedan), inte i en enda mening:
+- DRÖMRESULTAT i kronor: frigjort kapital ELLER lagerhållningskostnaden/år som
+  försvinner — välj EN av dem, inte båda, om siffertaket redan är nått.
+  Rama in som estimat ("erfarenhetsmässigt sitter 15–30 % av lagervärdet...").
 - SANNOLIKHET: proof point + att slutsatsen bygger på ERA EGNA bokslutssiffror
-  (inte gissningar). Du FÅR väva in riskreverseringen som förtroendesignal:
-  "{GUARANTEE}"
+  (inte gissningar).
 - TID: konkret ("en första bild inom en vecka, färdig analys på två veckor").
 - ANSTRÄNGNING: nära noll för dem — "en export ur ert affärssystem, vi gör resten.
   Ingen IT, inga möten, inget nytt system."
 
-3) ERBJUDANDET ÄR SAMTALET, INTE ANALYSEN. Sälj ett kort samtal och gör det riskfritt.
-- Ett enda tydligt CTA: 15 minuter.
-- Avriskera själva samtalet: t.ex. "Hittar vi inget värt att agera på har du
-  förlorat 15 minuter — och du får ramverket att köra själv ändå." Hitta inte på
-  andra löften.
+4) GARANTIN FÅR ETT EGET STYCKE.
+Riskreverseringen ("{GUARANTEE}") ska INTE vävas in i samma mening som proof
+point eller drömresultat. Den står ensam, kort, som ett eget stycke — det gör
+den till en tydlig signal istället för "ännu en siffra bland andra".
+
+5) STRUKTUR — 5–6 STYCKEN, SEPARERADE MED BLANKRAD (\\n\\n i JSON-fältet).
+Aldrig ett sammanhängande textblock. Varje stycke = EN tanke:
+   (1) Hook — bolagets egen siffra/signal (1 mening)
+   (2) Vem David är — kort (1 mening)
+   (3) Drömresultat — EN beräkning/spann
+   (4) Hur det går till — vad du behöver + tidslinje + låg ansträngning
+   (5) Garanti — eget stycke
+   (6) CTA — en fråga
+
+6) ERBJUDANDET ÄR SAMTALET, INTE ANALYSEN. Sälj ett kort samtal och gör det riskfritt.
+- Ett enda tydligt CTA i sista stycket: 15 minuter.
+- Avriskera samtalet i SAMMA stycke som CTA:n, inte som en konkurrerande fråga:
+  t.ex. "Har du 15 minuter — hittar vi inget värt att agera på har du bara
+  förlorat en kvart, och du får ramverket att köra själv ändå."
 
 TON & FORM:
 - Svenska (engelska om bolaget är tydligt internationellt). Du-tilltal, mänskligt,
   noll säljhype, inga utropstecken.
-- KORT: 5–7 meningar i brödtexten. Läsbart på mobil.
+- ALDRIG ord i VERSALER i mejltexten (skriv "vilka artiklar som är döda", aldrig
+  "VILKA artiklar") — versaler läses som att man skriker.
+- KORT: 5–6 stycken enligt strukturen ovan, 1–2 meningar per stycke.
+  Läsbart på mobil utan mer än en scroll.
 - Hitta ALDRIG på siffror, händelser eller resultat. Använd bara det du fått.
   Estimat ramas ALLTID in som estimat.
-- Öppningsraden = bolagets signal/siffra. Vem David är kommer först i mening 2–3,
-  kort (Logistics Doctor, hittar bundet kapital i lager).
+- Öppningsraden = bolagets signal/siffra. Vem David är kommer i stycke 2, kort
+  (Logistics Doctor, hittar bundet kapital i lager).
 - Avsluta ALLTID med exakt denna signatur:
 {SIGNATURE}
 
 Returnera EXAKT detta JSON (inget utanför):
-{{"subject": "...", "body": "hela mejltexten inkl. hälsning och signatur"}}
-Ämnesraden: max 8 ord, MED en konkret siffra eller spänning (t.ex.
+{{"subject": "...", "body": "hela mejltexten inkl. hälsning och signatur, med
+blankrad (\\n\\n) mellan varje stycke enligt strukturen ovan"}}
+Ämnesraden: 8–10 ord, MED en konkret siffra eller spänning (t.ex.
 "~X MSEK står stilla hos {{bolag}}"). Ingen clickbait, inga versaler."""
 
 
@@ -169,32 +197,31 @@ _ROLE_INSTRUCTIONS = {
     "vd": f"""Mottagare: VD, ägare eller grundare.
 VINKEL: helhetsrisk och kassaflöde — inte operativa detaljer. Kapital bundet i
 lager är kapital som inte kan gå till tillväxt, amortering eller utdelning.
-DRÖMRESULTAT att lyfta: frigjort kassaflöde och handlingsfrihet, uttryckt i kronor
-(frigörbart kapital + årlig lagerhållningskostnad som försvinner). Riskreverseringen
-(5× ROI-garantin) passar bra här som förtroendesignal.
+DRÖMRESULTAT att lyfta: frigjort kassaflöde och handlingsfrihet, uttryckt i kronor.
+Garantin står som eget stycke enligt regel 4.
 {_BASE_RULES}""",
 
     "cfo": f"""Mottagare: CFO, ekonomichef eller controller.
-VINKEL: balansräkning och siffror. Använd Days of Stock och lagerandel mot
-branschnorm för att visa hur mycket kapital som ligger ÖVER en sund nivå.
-DRÖMRESULTAT att lyfta: sänkt DOS och frigjort kapital som syns direkt i
-balansräkningen, plus borttagen lagerhållningskostnad/år. Riskreverseringen
-(5× ROI-garantin) hör hemma här — en CFO värderar avriskering.
+VINKEL: balansräkning och siffror. Använd Days of Stock eller lagerandel mot
+branschnorm för att visa hur mycket kapital som ligger över en sund nivå.
+DRÖMRESULTAT att lyfta: frigjort kapital som syns direkt i balansräkningen.
+Garantin står som eget stycke enligt regel 4 — en CFO värderar avriskering.
 {_BASE_RULES}""",
 
     "scm": f"""Mottagare: inköpschef, supply chain manager eller logistikchef.
 VINKEL: operativ igenkänning FÖRST, inte kapitalbindning som första krok. Säg det
 ingen säger högt: lager som vuxit av sig självt, parametrar ingen rört på år,
 kunskap som försvann när någon slutade, artiklar ingen vågar skrota.
-DRÖMRESULTAT att lyfta: äntligen veta VILKA artiklar som är döda, VARFÖR de sitter
-där och VAD man gör åt det — SKU för SKU. Kronorna får komma sekundärt.
+DRÖMRESULTAT att lyfta: att äntligen veta vilka artiklar som är döda, varför de
+sitter där och vad man gör åt det — SKU för SKU (skriv det med små bokstäver i
+mejlet, aldrig versaler). Kronorna får komma sekundärt.
 {_BASE_RULES}""",
 
     "neutral": f"""Mottagare: okänd person eller allmän/info-adress.
 VINKEL: luta mot CFO-spåret (siffror) men håll det rolloberoende. Eftersom du inte
 vet vem som läser: gör drömresultatet tydligt i kronor och håll språket enkelt.
 DRÖMRESULTAT att lyfta: identifiera och frigöra det kapital som ligger bundet i
-lager, uttryckt konkret. Riskreverseringen (5× ROI-garantin) får vara med.
+lager, uttryckt konkret. Garantin står som eget stycke enligt regel 4.
 {_BASE_RULES}""",
 }
 
@@ -439,11 +466,14 @@ def generate_email(
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
     response = client.messages.create(
         model=MODEL,
-        max_tokens=800,
+        # Fable 5 tänker innan den svarar och tänkandet räknas in i max_tokens —
+        # 800 (gamla värdet) räckte inte till ett helt sexstyckesmejl.
+        max_tokens=6000,
         system=_ROLE_INSTRUCTIONS[roll],
         messages=[{"role": "user", "content": user_msg}],
     )
-    raw = response.content[0].text.strip()
+    # Plocka bara textblocken (Fable 5 kan inleda med ett tankeblock)
+    raw = "".join(b.text for b in response.content if b.type == "text").strip()
 
     # Extrahera JSON
     if "```" in raw:
@@ -520,8 +550,9 @@ def generate_call_script(bolag, namn="", titel="", bransch="", orgnr="", website
     try:
         client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         resp = client.messages.create(
-            model=MODEL, max_tokens=500, system=_CALL_SYSTEM,
+            model=MODEL, max_tokens=3000, system=_CALL_SYSTEM,
             messages=[{"role": "user", "content": user_msg}])
-        return resp.content[0].text.strip()
+        # Plocka bara textblocken (Fable 5 kan inleda med ett tankeblock)
+        return "".join(b.text for b in resp.content if b.type == "text").strip()
     except Exception:
         return ""
