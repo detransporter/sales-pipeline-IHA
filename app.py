@@ -16,6 +16,18 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import streamlit as st
 
+# ── Secrets-brygga ───────────────────────────────────────────────────────────
+# Lokalt kommer nycklarna från .env (via python-dotenv). På Streamlit Cloud finns
+# ingen .env — där ligger de i st.secrets. Vi speglar st.secrets → os.environ så
+# att all os.getenv()-kod funkar oförändrat i båda miljöerna. MÅSTE ligga före
+# modulimporterna nedan, eftersom vissa läser nycklar redan vid import.
+try:
+    for _k, _v in st.secrets.items():
+        if isinstance(_v, str) and _k not in os.environ:
+            os.environ[_k] = _v
+except Exception:
+    pass
+
 from database import supabase_client as db
 from views import (today, find_companies, leads, replies, meetings, overview,
                    import_contacts)
@@ -25,6 +37,28 @@ st.set_page_config(
     page_icon="📊",
     layout="wide",
 )
+
+
+# ── Inloggning ───────────────────────────────────────────────────────────────
+# Aktiveras bara om APP_PASSWORD är satt (dvs online). Lokalt utan lösenord är
+# appen öppen. På Streamlit Cloud skyddar detta appen även om länken är publik.
+def _require_login() -> bool:
+    pw = os.environ.get("APP_PASSWORD", "")
+    if not pw or st.session_state.get("_authed"):
+        return True
+    st.title("🔒 Sales pipeline - IHA")
+    st.caption("Logga in för att fortsätta.")
+    entered = st.text_input("Lösenord", type="password")
+    if entered:
+        if entered == pw:
+            st.session_state["_authed"] = True
+            st.rerun()
+        st.error("Fel lösenord.")
+    return False
+
+
+if not _require_login():
+    st.stop()
 
 
 # ── Sidor: namn i menyn → funktionen som ritar sidan ─────────────────────────

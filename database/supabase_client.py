@@ -381,6 +381,24 @@ def get_existing_companies() -> set[str]:
     return names
 
 
+def get_excluded_identifiers() -> tuple[set[str], set[str]]:
+    """Returnerar (kända bolagsnamn lower, kända orgnr) från prospects + lead_suggestions.
+    Används för att filtrera bort redan kända bolag ur sökresultat innan visning."""
+    client = get_client()
+    p_rows = client.table("prospects").select("bolag,orgnr").execute().data
+    s_rows = client.table("lead_suggestions").select("bolag,orgnr").execute().data
+    names: set[str] = set()
+    orgnrs: set[str] = set()
+    for row in p_rows + s_rows:
+        n = str(row.get("bolag") or "").strip().lower()
+        o = str(row.get("orgnr") or "").strip()
+        if n:
+            names.add(n)
+        if o:
+            orgnrs.add(o)
+    return names, orgnrs
+
+
 # ── Inlärning: hämta DM-historik kopplad till utfall ────────────────────────
 
 def get_all_dm_history(typ: str | None = None) -> list[dict]:
