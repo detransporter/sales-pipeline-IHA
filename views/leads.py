@@ -47,83 +47,69 @@ def render():
         st.info("Inga leads väntar. Hitta nya bolag under 🔍 Hitta bolag.")
         st.button("🔍 Gå till Hitta bolag →", on_click=goto, args=("🔍 Hitta bolag",))
     else:
-        no_web = [l for l in pending if l.get("id") and not (l.get("website") or "").strip()]
-        no_person = [l for l in pending if l.get("id") and not l.get("namn")]
-
-        # ── GRATIS: hitta hemsidor + e-post (ingen Apify) ───────────────────
-        if no_web:
-            st.caption(f"🌐 {len(no_web)} lead(s) saknar hemsida. Gissar domänen ur "
-                       f"bolagsnamnet och skrapar publik e-post — **helt gratis**, "
-                       f"inga Apify-krediter.")
-            if st.button(f"🌐 Hitta hemsidor + e-post gratis ({len(no_web)})",
-                         type="primary", key="bulk_web"):
-                prog = st.progress(0.0)
-                web_n = mail_n = tel_n = 0
-                for i, l in enumerate(no_web):
-                    try:
-                        web = _apify.guess_company_website(l.get("bolag", ""))
-                        if web:
+        # ── EN knapp: bearbeta hela den godkända listan (gratis-först) ──────
+        # Ett svep hittar hemsida + e-post + telefon (gratis) och rätt person
+        # (gratis web search först, Apify bara om krediter finns).
+        need_work = [l for l in pending
+                     if l.get("id") and (not (l.get("website") or "").strip()
+                                         or not l.get("namn"))]
+        if need_work:
+            st.caption(f"**{len(need_work)} nya leads** att bearbeta. Ett klick hittar hemsida, "
+                       f"e-post, telefon och rätt person för hela listan — hemsida/e-post/telefon "
+                       f"är gratis, personsök körs gratis (web search) och faller bara tillbaka "
+                       f"på Apify om det finns krediter.")
+            if st.button(f"🚀 Bearbeta {len(need_work)} nya leads", type="primary",
+                         key="bulk_enrich"):
+                prog = st.progress(0.0, text="Bearbetar leads...")
+                web_n = mail_n = tel_n = pers_n = 0
+                for i, l in enumerate(need_work):
+                    lid = l["id"]
+                    had_web = bool((l.get("website") or "").strip())
+                    web = (l.get("website") or "").strip()
+                    # 1. Hemsida (gratis gissning) + e-post + telefon
+                    if not web:
+                        try:
+                            web = _apify.guess_company_website(l.get("bolag", "")) or ""
+                        except Exception:
+                            web = ""
+                    if web:
+                        try:
                             contact = _apify.find_emails(web, l.get("bolag", ""), render=False)
                             email = contact.get("best", "") or contact.get("guessed", "")
                             tel = contact.get("telefon", "")
-                            contact_cache[l["id"]] = {**contact, "website": web}
-                            db.update_lead_suggestion_contact(l["id"], email=email,
+                            contact_cache[lid] = {**contact, "website": web}
+                            db.update_lead_suggestion_contact(lid, email=email,
                                                               website=web, telefon=tel)
-                            web_n += 1
+                            if not had_web:
+                                web_n += 1
                             if contact.get("best"):
                                 mail_n += 1
                             if tel:
                                 tel_n += 1
-                    except Exception:
-                        pass
-                    prog.progress((i + 1) / len(no_web))
-                st.success(f"Hittade hemsida för {web_n} av {len(no_web)} bolag "
-                           f"({mail_n} med e-post, {tel_n} med telefon) — gratis. "
-                           f"Verifiera innan du mejlar/ringer.")
-                st.rerun()
-
-        # ── BETALT: hitta personer via LinkedIn (drar Apify-krediter) ───────
-        if no_person:
-            st.caption(f"🔗 {len(no_person)} lead(s) saknar person. LinkedIn-personsök "
-                       f"kräver Apify-krediter (Google-aktorn).")
-            # Proaktiv kreditvarning — kollas en gång per session (ingen polling).
-            if "apify_credit" not in st.session_state:
+                        except Exception:
+                            pass
+                    # 2. Person (find_person: gratis web search först, Apify om krediter)
+                    if not l.get("namn"):
+                        try:
+                            found = people_finder.find_person(
+                                l.get("bolag", ""), web, l.get("titel", ""), l.get("bransch", ""))
+                            if found.get("namn"):
+                                db.update_lead_suggestion_person(
+                                    lid, found["namn"], found.get("titel", ""),
+                                    found.get("linkedin_url", ""))
+                                pers_n += 1
+                        except Exception:
+                            pass
+                    prog.progress((i + 1) / len(need_work),
+                                  text=f"Bearbetat {i + 1}/{len(need_work)} bolag")
                 st.session_state["apify_credit"] = _apify.remaining_usage_usd()
-            _cred = st.session_state["apify_credit"]
-            if _cred is not None and _cred < 0.50:
-                st.warning(
-                    f"⚠️ Apify-krediterna är nästan slut (~${_cred} kvar av $5/mån) — "
-                    "personsök misslyckas tills du fyller på (console.apify.com/billing) "
-                    "eller cykeln återställs. Gratis-knappen ovan fungerar ändå.")
-            if st.button(f"🔗 Hitta personer via LinkedIn ({len(no_person)})",
-                         key="bulk_people"):
-                prog = st.progress(0.0)
-                found_n = 0
-                for i, l in enumerate(no_person):
-                    # Återanvänd känd hemsida, annars gratis gissning (ingen extra kredit).
-                    web = ((l.get("website") or "").strip()
-                           or _apify.guess_company_website(l.get("bolag", "")))
-                    try:
-                        found = people_finder.find_person(
-                            l.get("bolag", ""), web,
-                            l.get("titel", ""), l.get("bransch", ""))
-                        if found.get("namn"):
-                            db.update_lead_suggestion_person(
-                                l["id"], found["namn"],
-                                found.get("titel", ""), found.get("linkedin_url", ""))
-                            found_n += 1
-                            if web and not (l.get("website") or "").strip():
-                                db.update_lead_suggestion_contact(l["id"], website=web)
-                    except Exception:
-                        pass
-                    prog.progress((i + 1) / len(no_person))
-                # Uppdatera kreditsaldot och surfa upp ev. Apify-fel (t.ex. slut på krediter)
-                st.session_state["apify_credit"] = _apify.remaining_usage_usd()
+                st.success(f"Klart — av {len(need_work)}: hemsida +{web_n}, e-post +{mail_n}, "
+                           f"telefon +{tel_n}, person +{pers_n}. Verifiera innan du kontaktar.")
                 if _apify.LAST_APIFY_ERROR:
-                    st.error(f"⚠️ {_apify.LAST_APIFY_ERROR}")
-                st.success(f"Hittade person på {found_n} av {len(no_person)} bolag. "
-                           "Verifiera länkarna innan du godkänner.")
+                    st.caption(f"ℹ️ {_apify.LAST_APIFY_ERROR}")
                 st.rerun()
+        else:
+            st.caption("✅ Alla leads har hemsida och person — godkänn nedan för pipeline.")
 
         st.divider()
         for l in pending:
