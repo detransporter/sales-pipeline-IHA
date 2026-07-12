@@ -152,7 +152,45 @@ def render():
             st.caption("✅ Alla leads har hemsida och person — godkänn nedan för pipeline.")
 
         st.divider()
-        for l in pending:
+
+        # ── Sortering + filter (hjälper när listan är lång) ──────────────────
+        scol, fcol = st.columns(2)
+        with scol:
+            sort_by = st.selectbox(
+                "Sortera", ["IHA-score (högst)", "Lagerandel (högst)",
+                            "Bolag (A–Ö)", "Nyast först"], key="leads_sort")
+        with fcol:
+            filt = st.selectbox(
+                "Visa", ["Alla", "Saknar person", "Har person (redo att godkänna)",
+                         "Saknar hemsida/e-post"], key="leads_filter")
+
+        def _num(v):
+            try:
+                return float(v)
+            except Exception:
+                return -1.0
+
+        view = list(pending)
+        if filt == "Saknar person":
+            view = [l for l in view if not (l.get("namn") or "").strip()]
+        elif filt == "Har person (redo att godkänna)":
+            view = [l for l in view if (l.get("namn") or "").strip()]
+        elif filt == "Saknar hemsida/e-post":
+            view = [l for l in view if not (l.get("website") or "").strip()
+                    or not (l.get("email") or "").strip()]
+
+        if sort_by == "IHA-score (högst)":
+            view.sort(key=lambda l: _num(l.get("score")), reverse=True)
+        elif sort_by == "Lagerandel (högst)":
+            view.sort(key=lambda l: _num(l.get("lagerandel")), reverse=True)
+        elif sort_by == "Bolag (A–Ö)":
+            view.sort(key=lambda l: (l.get("bolag") or "").lower())
+        elif sort_by == "Nyast först":
+            view.sort(key=lambda l: (l.get("created_at") or ""), reverse=True)
+
+        st.caption(f"Visar {len(view)} av {len(pending)} leads "
+                   f"— sorterat på {sort_by.lower()}.")
+        for l in view:
             _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag)
 
     # Sekundärt: föreslå fler leads automatiskt (AI/Apify)
