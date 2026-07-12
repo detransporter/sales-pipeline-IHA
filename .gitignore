@@ -23,3 +23,6 @@ env/
 streamlit.log
 *.log
 .claude/
+
+# Data-/prospektfiler — hör inte hemma i kodrepot (läckagerisk)
+*.csv

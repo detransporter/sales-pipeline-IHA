@@ -29,8 +29,8 @@ except Exception:
     pass
 
 from database import supabase_client as db
-from views import (today, find_companies, leads, replies, meetings, overview,
-                   import_contacts)
+from views import (today, find_companies, leads, replies, meetings, pipeline,
+                   agent, overview, import_contacts)
 
 st.set_page_config(
     page_title="Sales pipeline - IHA",
@@ -69,6 +69,8 @@ PAGES = {
     "🌱 Leads": leads.render,
     "💬 Svar & uppföljning": replies.render,
     "📅 Möten": meetings.render,
+    "💰 Pipeline": pipeline.render,
+    "🧠 David Agent": agent.render,
     "📊 Översikt": overview.render,
     "📥 Importera kontakter": import_contacts.render,
 }
