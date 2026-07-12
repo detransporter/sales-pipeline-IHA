@@ -337,21 +337,30 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                                               placeholder="+46 70 123 45 67")
                     if st.form_submit_button("💾 Spara"):
                         try:
-                            # Rättningsfångst: skriver David över en AGENT-gissning
-                            # (fanns ett namn förut som nu ändras)? Spara lärdomen i
-                            # Open Brain så framtida sökningar undviker samma miss.
-                            _old_namn = (l.get("namn") or "").strip()
-                            if (m_namn.strip() and _old_namn
-                                    and m_namn.strip() != _old_namn
-                                    and _brain and _brain.is_configured()):
+                            # Lär agenten via Open Brain. TVÅ fall:
+                            #  1. Rättning: David skriver över en felgissning.
+                            #  2. Lärdom: agenten hittade INGEN, David hittade personen
+                            #     själv (t.ex. via hemsidan) — den mest värdefulla signalen.
+                            # Sparas → återanvänds av find_person för liknande bolag.
+                            _old = (l.get("namn") or "").strip()
+                            _new = m_namn.strip()
+                            _rol = m_titel.strip()
+                            if _new and _new != _old and _brain and _brain.is_configured():
+                                if _old:
+                                    _note = (f"[people_finder-rättning] {l.get('bolag','')} "
+                                             f"({l.get('bransch','')}): agenten gissade "
+                                             f"\"{_old}\" men rätt person är \"{_new}\""
+                                             + (f", {_rol}" if _rol else "")
+                                             + ". Vikta den rollen/källan högre för liknande bolag.")
+                                else:
+                                    _note = (f"[people_finder-lärdom] {l.get('bolag','')} "
+                                             f"({l.get('bransch','')}): agenten hittade ingen "
+                                             f"person, men rätt kontakt är \"{_new}\""
+                                             + (f", {_rol}" if _rol else "")
+                                             + " — hittad manuellt på hemsidan. Leta djupare på "
+                                             "Om oss/Ledning/Kontakt-sidor för liknande bolag.")
                                 try:
-                                    _brain.capture_thought(
-                                        f"[people_finder-rättning] {l.get('bolag','')} "
-                                        f"({l.get('bransch','')}): agenten gissade "
-                                        f"\"{_old_namn}\" men rätt person är "
-                                        f"\"{m_namn.strip()}\""
-                                        + (f", {m_titel.strip()}" if m_titel.strip() else "")
-                                        + ". Vikta den rollen/källan högre nästa gång."[:400])
+                                    _brain.capture_thought(_note[:400])
                                 except Exception:
                                     pass
                             if m_namn.strip():
