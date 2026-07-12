@@ -1,5 +1,7 @@
 """🌱 Leads — hitta person + godkänn (en enda lista)."""
 
+import re
+
 import streamlit as st
 
 from agents import people_finder
@@ -309,6 +311,55 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
         # Mejlstatus som synlig bricka på kortet — du ser den utan att öppna panelen.
         if _sent_date:
             st.success(f"✅ Mejl skickat {_sent_date}")
+
+        # ── Snabb-genväg: klistra in kontakt (för hårda bolag skraparen missar) ──
+        with st.expander("📋 Klistra in kontakt"):
+            raw = st.text_area(
+                "Klistra in namn / e-post / telefon (valfritt format)",
+                key=f"paste_{lid}", height=90,
+                placeholder="Tony Ekström, VD\ntony@soliferpolar.com\n0942-520 00")
+            if st.button("📋 Tolka & spara", key=f"paste_save_{lid}", type="primary"):
+                txt = raw or ""
+                _mails = _apify._EMAIL_RE.findall(txt)
+                _phones = _apify._extract_phones(txt)
+                p_email = _mails[0].strip().lower() if _mails else ""
+                p_tel = _phones[0] if _phones else ""
+                # Namn: bara om leaden saknar person. Ta första rad utan @ och utan
+                # långt sifferblock (2–5 ord), som ser ut som ett namn.
+                p_namn = ""
+                if not (l.get("namn") or "").strip():
+                    for line in txt.splitlines():
+                        # Dra bort ev. roll efter komma: "Tony Ekström, VD" → "Tony Ekström"
+                        cand = line.strip().split(",")[0].strip()
+                        if (cand and "@" not in cand and not re.search(r"\d{4,}", cand)
+                                and 2 <= len(cand.split()) <= 4):
+                            p_namn = cand
+                            break
+                if not (p_email or p_tel or p_namn):
+                    st.warning("Hittade varken namn, e-post eller telefon i texten.")
+                else:
+                    try:
+                        _old_n = (l.get("namn") or "").strip()
+                        if p_namn and _brain and _brain.is_configured():
+                            try:
+                                _brain.capture_thought(
+                                    (f"[people_finder-lärdom] {l.get('bolag','')} "
+                                     f"({l.get('bransch','')}): agenten hade ingen person, "
+                                     f"David klistrade in \"{p_namn}\" — leta djupare på "
+                                     "Om oss/Ledning/Kontakt för liknande bolag.")[:400])
+                            except Exception:
+                                pass
+                        if p_namn:
+                            db.update_lead_suggestion_person(
+                                lid, p_namn, l.get("titel", ""), l.get("linkedin_url", ""))
+                        if p_email or p_tel or website:
+                            db.update_lead_suggestion_contact(
+                                lid, email=p_email, website=website, telefon=p_tel)
+                        st.success(f"Sparat — namn: {p_namn or '(oförändrat)'} · "
+                                   f"e-post: {p_email or '—'} · telefon: {p_tel or '—'}")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Fel: {e}")
 
         # Sekundära åtgärder samlade under EN panel (tre flikar) så listan blir
         # lätt att skanna. Öppna bara det kort du jobbar med.
