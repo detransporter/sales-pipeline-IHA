@@ -10,6 +10,23 @@ from database import supabase_client as db
 from views.shared import person_link_inline, render_email_composer, log_sent_email
 
 
+def _reply_subject(prospect_id: str, bolag: str) -> str:
+    """Ämnesrad för svar: 'Re: <senaste mejlämnet>' så tråden hålls ihop i
+    mottagarens inkorg. Fallback: bolagsnamnet."""
+    try:
+        for m in db.get_sent_emails(limit=200):
+            if m.get("prospect_id") == prospect_id:
+                for line in (m.get("meddelande") or "").splitlines():
+                    if line.lower().startswith("ämne:"):
+                        subj = line.split(":", 1)[1].strip()
+                        if subj:
+                            return subj if subj.lower().startswith("re:") else f"Re: {subj}"
+                break
+    except Exception:
+        pass
+    return f"Re: {bolag}" if bolag else "Re: vårt mejl"
+
+
 def render():
     st.title("💬 Svar & uppföljning")
 
@@ -43,8 +60,13 @@ def _render_replies_tab():
                 else:
                     with st.spinner("Kvalificerar och skriver förslag..."):
                         try:
-                            inbox_watcher.process_manual_reply(opt[chosen], reply_text)
-                            st.success("Klart! Förslaget ligger i kön nedan. 👇")
+                            saved = inbox_watcher.process_manual_reply(opt[chosen], reply_text)
+                            if saved.get("kategori") == "AUTOSVAR":
+                                st.info(f"🏖 Autosvar upptäckt — uppföljningen är pausad "
+                                        f"till **{saved.get('_atergang', '?')}**. "
+                                        f"Inget mer att göra.")
+                            else:
+                                st.success("Klart! Förslaget ligger i kön nedan. 👇")
                         except Exception as e:
                             msg = str(e)
                             if "row-level security" in msg:
@@ -109,10 +131,14 @@ def _render_replies_tab():
                             if st.button("🤖 Behandla", key=f"proc_email_{i}", type="primary"):
                                 with st.spinner("Kvalificerar..."):
                                     try:
-                                        inbox_watcher.process_manual_reply(pid, r["body"])
+                                        saved = inbox_watcher.process_manual_reply(pid, r["body"])
                                         pending_email.pop(i)
                                         st.session_state["pending_email_replies"] = pending_email
-                                        st.success("Behandlat — ligger nu i svarskön nedan.")
+                                        if saved.get("kategori") == "AUTOSVAR":
+                                            st.info(f"🏖 Autosvar — uppföljning pausad till "
+                                                    f"{saved.get('_atergang', '?')}.")
+                                        else:
+                                            st.success("Behandlat — ligger nu i svarskön nedan.")
                                         st.rerun()
                                     except Exception as e:
                                         st.error(f"Fel: {e}")
@@ -149,19 +175,48 @@ def _render_replies_tab():
             bolag = p.get("bolag", "")
             kat = r.get("kategori") or "?"
             steg = stage_label(r.get("steg", ""))
+            pid = (r.get("prospects") or {}).get("id") or r.get("prospect_id")
+            email = (p.get("email") or "").strip()
             with st.container(border=True):
                 st.markdown(f"### {namn} @ {bolag}")
                 st.caption(f"Kategori: {kat} · Säljtrappa: {steg}")
                 st.markdown("**De skrev:**")
                 st.info(r.get("text", ""))
-                st.markdown("**Ditt nästa meddelande** (redigera, kopiera, skicka):")
+                st.markdown("**Ditt nästa meddelande** (redigera och skicka):")
                 edited = st.text_area("Redigera innan du skickar",
                                       value=r.get("suggested_reply", ""),
                                       key=f"reply_{r['id']}", height=110)
-                st.code(edited, language=None)
-                b1, b2 = st.columns([2, 1])
+
+                # Skicka direkt via mejl om kontakten har e-post — annars kopiera.
+                if email:
+                    b0, b1, b2 = st.columns([2, 2, 1])
+                    with b0:
+                        if st.button(f"📨 Skicka via mejl", key=f"send_{r['id']}",
+                                     type="primary", use_container_width=True,
+                                     help=f"Skickar texten ovan till {email} och "
+                                          f"markerar svaret som hanterat."):
+                            from integrations import email_sender
+                            subject = _reply_subject(pid, bolag)
+                            ok, err = email_sender.send_email(email, subject, edited)
+                            if ok:
+                                try:
+                                    log_sent_email(pid, email, subject, edited)
+                                    db.mark_reply_handled(r["id"])
+                                except Exception:
+                                    pass
+                                st.success(f"✅ Skickat till {email} — hanterat.")
+                                st.rerun()
+                            else:
+                                st.error(err)
+                else:
+                    st.code(edited, language=None)
+                    st.caption("Ingen e-post på kontakten — kopiera texten och "
+                               "skicka via LinkedIn, markera sedan som hanterad.")
+                    b1, b2 = st.columns([2, 1])
+
                 with b1:
-                    if st.button("✅ Klar / hanterad", key=f"done_{r['id']}", type="primary",
+                    if st.button("✅ Klar / hanterad", key=f"done_{r['id']}",
+                                 type="primary" if not email else "secondary",
                                  use_container_width=True):
                         try:
                             db.mark_reply_handled(r["id"])
@@ -175,7 +230,6 @@ def _render_replies_tab():
                                  help="Kontakten är inte intresserad — stäng och arkivera."):
                         try:
                             db.mark_reply_handled(r["id"])
-                            pid = (r.get("prospects") or {}).get("id") or r.get("prospect_id")
                             if pid:
                                 db.update_prospect_status(pid, "avbojd")
                             st.success("Avböjd och stängd.")

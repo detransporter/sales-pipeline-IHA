@@ -14,6 +14,32 @@ KPI:er (standardvärden, justerbara i UI):
 IHA-score rankar kvalificerade bolag: hög lagerandel + låg/negativ marginal = högst prio.
 """
 
+# Nyckelord per bransch för keyword-sweep (komplement till segmentering).
+# Segmentering hittar bolag via finansiell storlek; keyword-sweep hittar bolag
+# via branschbeskrivning. Tillsammans täcker de varandras blindfläckar.
+# "Alla lager-tunga" = kurerade topptermer, inte hela listan (annars för långsamt).
+BRANSCH_KEYWORDS: dict[str, list[str]] = {
+    "Alla lager-tunga branscher": [
+        "grossist", "partihandel", "tillverkning", "industri",
+        "metallindustri", "plasttillverkning", "livsmedelstillverkning",
+        "byggvaruhandel", "elektroniktillverkning", "distribution",
+    ],
+    "Tillverkning (generellt)":           ["tillverkning", "tillverkande företag", "industri"],
+    "Plasttillverkning":                  ["plasttillverkning", "plastindustri", "formsprutning"],
+    "Metall & verkstad":                  ["metallindustri", "verkstadsindustri", "legotillverkning metall"],
+    "Industriell utrustning/maskiner":    ["maskintillverkning", "industriutrustning", "maskinindustri"],
+    "Livsmedelstillverkning":             ["livsmedelstillverkning", "livsmedelsindustri", "livsmedelsproducent"],
+    "Möbel & inredning":                  ["möbeltillverkning", "möbelindustri", "inredningstillverkning"],
+    "Kemi & plast":                       ["kemisk industri", "kemikalietillverkning", "plastindustri"],
+    "Medtech":                            ["medicinteknik", "medicintekniska produkter", "medtech tillverkning"],
+    "Förpackning":                        ["förpackningstillverkning", "förpackningsindustri", "emballage"],
+    "Elektronik/kontraktstillverkning":   ["elektroniktillverkning", "kontraktstillverkning", "legotillverkning elektronik"],
+    "Grossist (generellt)":               ["grossist", "partihandel", "grossisthandel"],
+    "Bygggrossist":                       ["byggvaruhandel", "byggmaterial grossist", "bygggrossist"],
+    "Distribution/partihandel":           ["distribution", "partihandel", "import grossist"],
+    "E-handel med lager":                 ["e-handel", "näthandel lager", "postorder"],
+}
+
 # Kurerade ICP-branscher → flera sökord (poolas för bredare träff). Rullgardin i UI.
 BRANSCHER: dict[str, list[str]] = {
     "Tillverkning (generellt)": ["tillverkning", "tillverkande företag", "industri"],
@@ -80,26 +106,47 @@ DEFAULT_MAX_MARGINAL = 3.0      # %
 
 
 def compute_kpis(fin: dict) -> dict:
-    """Räkna ut lagerandel och vinstmarginal (%) ur en Allabolag-ekonomi-dict."""
+    """Räkna ut lagerandel, vinstmarginal och bruttomarginal (%) ur en Allabolag-ekonomi-dict."""
     oms = fin.get("omsattning_msek")
     varulager = fin.get("varulager_msek") or 0.0
     resultat = fin.get("resultat_msek")
 
     lagerandel = round(varulager / oms * 100, 1) if oms else None
     vinstmarginal = round(resultat / oms * 100, 1) if (oms and resultat is not None) else None
-    return {"lagerandel": lagerandel, "vinstmarginal": vinstmarginal}
+    # Bruttomarginal kommer direkt från Allabolag (TR-kod) — redan beräknad i allabolag.py
+    bruttomarginal = fin.get("bruttomarginal")
+    return {
+        "lagerandel": lagerandel,
+        "vinstmarginal": vinstmarginal,
+        "bruttomarginal": bruttomarginal,
+    }
 
 
-def iha_score(lagerandel: float | None, vinstmarginal: float | None) -> int:
+def iha_score(lagerandel: float | None, vinstmarginal: float | None,
+              bruttomarginal: float | None = None) -> int:
     """
     Ju mer kapital i lager och ju sämre lönsamhet, desto högre prio.
-    Hög lagerandel väger tyngst; låg/negativ marginal ger påslag.
+
+    Dimensioner:
+      lagerandel     — primär drivare (20–100+ → direkt påslag)
+      vinstmarginal  — nettolönsamhet: pressad marginal förstärker caset
+      bruttomarginal — täckningsgrad: låg bruttomarginal = prispress =
+                       bolaget har råd minst av allt att ha dött lager
     """
     score = 0.0
     if lagerandel is not None:
-        score += lagerandel                       # 20–100+ → driver scoren
+        score += lagerandel                        # 20–100+ → driver scoren
     if vinstmarginal is not None:
-        score += max(0.0, 10.0 - vinstmarginal)   # marginal 3% → +7, förlust → +10–20
+        score += max(0.0, 10.0 - vinstmarginal)    # 3% → +7, förlust → +10–20
+    if bruttomarginal is not None:
+        # Låg täckning = stark prispress = starkare IHA-case
+        if bruttomarginal < 10:
+            score += 12
+        elif bruttomarginal < 20:
+            score += 7
+        elif bruttomarginal < 35:
+            score += 3
+        # >35% → inga poäng (hälsosam marginal)
     return int(round(score))
 
 
@@ -157,7 +204,9 @@ def screen_company(fin: dict,
     hard_margin=True för att åter göra marginal < max_marginal till ett hårt krav.
     """
     kpis = compute_kpis(fin)
-    lagerandel, marginal = kpis["lagerandel"], kpis["vinstmarginal"]
+    lagerandel = kpis["lagerandel"]
+    marginal = kpis["vinstmarginal"]
+    bruttomarginal = kpis["bruttomarginal"]
     oms, anst = fin.get("omsattning_msek"), fin.get("anstallda")
 
     skal: list[str] = []
@@ -181,7 +230,7 @@ def screen_company(fin: dict,
     result.update(kpis)
     result["passar"] = len(skal) == 0
     result["skäl"] = skal
-    result["iha_score"] = iha_score(lagerandel, marginal)
+    result["iha_score"] = iha_score(lagerandel, marginal, bruttomarginal)
     return result
 
 

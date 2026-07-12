@@ -29,6 +29,7 @@ from integrations import apify_research as apify
 CODE_NETTOOMS = "SDI"          # Nettoomsättning
 CODE_VARULAGER = "SV"          # Varulager
 CODE_RESULTAT = "resultat_e_finansnetto"
+CODE_BRUTTOMARGINAL = "TR"     # Täckningsgrad / bruttomarginal (%)
 
 _NEXT_RE = re.compile(r'__NEXT_DATA__"[^>]*>(\{.*?\})</script>', re.DOTALL)
 
@@ -299,6 +300,12 @@ def parse_company(html: str) -> dict:
     if resultat_tkr is None:
         resultat_tkr = _to_float(company.get("profit"))
 
+    # TR = täckningsgrad / bruttomarginal (%) — direktavläst, redan i procent
+    tr_pct = _to_float(accounts.get(CODE_BRUTTOMARGINAL))
+    bruttoresultat_msek = None
+    if tr_pct is not None and nettooms_tkr:
+        bruttoresultat_msek = round(nettooms_tkr / 1000 * tr_pct / 100, 1)
+
     anstallda = company.get("numberOfEmployees")
     try:
         anstallda = int(anstallda) if anstallda not in (None, "") else None
@@ -311,6 +318,20 @@ def parse_company(html: str) -> dict:
         first = industries[0]
         bransch = (first.get("name") if isinstance(first, dict) else str(first)) or ""
 
+    # Befattningshavare (VD + ledning) direkt ur Allabolags Bolagsverket-data.
+    # Samma källa som Bolagsverket-registret — gratis, ingen Apify-kredit.
+    befattningshavare: list[dict] = []
+    roles_data = company.get("roles") or {}
+    for group in roles_data.get("roleGroups", []):
+        group_name = str(group.get("name") or "").strip()
+        if group_name in ("Management", "Other"):
+            for r in group.get("roles", []):
+                if r.get("type") == "Person" and r.get("name"):
+                    befattningshavare.append({
+                        "namn": str(r["name"]).strip(),
+                        "roll": str(r.get("role") or "").strip(),
+                    })
+
     return {
         "bolag": str(company.get("name") or company.get("legalName") or "").strip(),
         "orgnr": str(company.get("orgnr") or "").strip(),
@@ -321,7 +342,10 @@ def parse_company(html: str) -> dict:
         "omsattning_msek": round(nettooms_tkr / 1000, 1) if nettooms_tkr else None,
         "varulager_msek": round(varulager_tkr / 1000, 1) if varulager_tkr else 0.0,
         "resultat_msek": round(resultat_tkr / 1000, 1) if resultat_tkr is not None else None,
+        "bruttomarginal": round(tr_pct, 1) if tr_pct is not None else None,
+        "bruttoresultat_msek": bruttoresultat_msek,
         "anstallda": anstallda,
+        "befattningshavare": befattningshavare,
         "history": history,
         "_nettooms_tkr": nettooms_tkr,
         "_varulager_tkr": varulager_tkr,

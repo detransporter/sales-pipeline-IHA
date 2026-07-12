@@ -55,7 +55,34 @@ def delete_prospect(prospect_id: str) -> bool:
 def update_prospect_status(prospect_id: str, status: str) -> dict:
     client = get_client()
     result = client.table("prospects").update({"status": status}).eq("id", prospect_id).execute()
-    return result.data[0] if result.data else {}
+    prospect = result.data[0] if result.data else {}
+    # Överlämning outreach → affär: bokat möte skapar ett deal i Meeting-stage
+    # (om inget redan finns). Tåligt — får aldrig blockera statusuppdateringen.
+    if status == "mote_bokat" and prospect:
+        try:
+            _promote_to_deal(prospect)
+        except Exception:
+            pass
+    return prospect
+
+
+def _promote_to_deal(prospect: dict) -> None:
+    """Skapa ett deal (Meeting, 45 000 kr) från en prospect vid bokat möte."""
+    pid = prospect.get("id")
+    if not pid or deal_exists_for_prospect(pid):
+        return
+    save_pipeline_deal({
+        "contact_name": prospect.get("namn") or prospect.get("bolag") or "?",
+        "contact_title": prospect.get("titel") or "",
+        "company": prospect.get("bolag") or "?",
+        "email": prospect.get("email") or None,
+        "phone": prospect.get("telefon") or None,
+        "linkedin_url": prospect.get("linkedin_url") or None,
+        "stage": "Meeting",
+        "contract_value": IHA_DEFAULT_VALUE,
+        "notes": (prospect.get("extra_info") or "")[:300],
+        "prospect_id": pid,
+    })
 
 
 def update_prospect_stage(prospect_id: str, steg: str) -> dict:
@@ -85,12 +112,14 @@ def insert_dm(prospect_id: str, meddelande: str, typ: str = "initial", angle: st
     return result.data[0] if result.data else {}
 
 
-def mark_dm_skickad(dm_id: str) -> dict:
+def mark_dm_skickad(dm_id: str, at: str | None = None) -> dict:
+    """Markera skickad. `at` (ISO-datum) kan sättas till FRAMTID för att pausa
+    uppföljningar — followup räknar dagar sedan senaste dm:ets skickad_at."""
     from datetime import datetime
     client = get_client()
     result = client.table("dm_history").update({
         "status": "skickad",
-        "skickad_at": datetime.utcnow().isoformat(),
+        "skickad_at": at or datetime.utcnow().isoformat(),
     }).eq("id", dm_id).execute()
     return result.data[0] if result.data else {}
 
@@ -526,4 +555,71 @@ def mark_reply_handled(reply_id: str) -> dict:
         .eq("id", reply_id)
         .execute()
     )
+    return result.data[0] if result.data else {}
+
+
+# ── Deal-pipeline (affärssidan efter bokat möte) ─────────────────────────────
+# Prospects äger tratten FÖRE mötet; deals äger den EFTER. En kontakt lämnas
+# över vid mote_bokat och spåras sedan här med kontraktsvärde + sannolikhet.
+
+DEAL_STAGES = ["Meeting", "IHA Proposal", "Signed Contract", "Lost"]
+DEAL_PROB = {"Meeting": 40, "IHA Proposal": 75, "Signed Contract": 100, "Lost": 0}
+
+# Sannolikheter för prospects-statusar — gör weighted pipeline kontinuerlig
+# över HELA tratten (outreach + affär).
+PROSPECT_PROB = {"skickad": 5, "followup_1": 5, "followup_2": 5, "svar_ja": 15}
+IHA_DEFAULT_VALUE = 45_000  # IHA Essential, förifyllt kontraktsvärde
+
+
+def fetch_pipeline_deals() -> list[dict]:
+    client = get_client()
+    result = (
+        client.table("pipeline")
+        .select("*")
+        .order("created_at", desc=True)
+        .execute()
+    )
+    return result.data
+
+
+def save_pipeline_deal(row: dict) -> dict:
+    client = get_client()
+    result = client.table("pipeline").insert(row).execute()
+    return result.data[0] if result.data else {}
+
+
+def update_pipeline_deal(deal_id: int, updates: dict) -> dict:
+    client = get_client()
+    updates.setdefault("updated_at", datetime.utcnow().isoformat())
+    result = (
+        client.table("pipeline")
+        .update(updates)
+        .eq("id", deal_id)
+        .execute()
+    )
+    return result.data[0] if result.data else {}
+
+
+def deal_exists_for_prospect(prospect_id: str) -> bool:
+    """True om kontakten redan har ett deal (så mote_bokat inte skapar dubbletter)."""
+    if not prospect_id:
+        return False
+    client = get_client()
+    result = (
+        client.table("pipeline")
+        .select("id")
+        .eq("prospect_id", prospect_id)
+        .limit(1)
+        .execute()
+    )
+    return bool(result.data)
+
+
+def save_daily_reflection(raw_notes: str, summary: str) -> dict:
+    client = get_client()
+    result = client.table("daily_reflections").insert({
+        "date": datetime.utcnow().date().isoformat(),
+        "raw_notes": raw_notes,
+        "summary": summary,
+    }).execute()
     return result.data[0] if result.data else {}

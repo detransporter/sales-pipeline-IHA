@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manual — Sales pipeline IHA</title>
+<style>
+  body { font-family: -apple-system, 'Segoe UI', sans-serif; max-width: 860px;
+         margin: 0 auto; padding: 2rem 1.5rem; color: #1a1a2e; line-height: 1.6;
+         background: #fafbfd; }
+  h1 { color: #0a66c2; border-bottom: 3px solid #0a66c2; padding-bottom: .4rem; }
+  h2 { color: #0a66c2; margin-top: 2.5rem; padding: .5rem .8rem;
+       background: #eef4fb; border-radius: 8px; }
+  h3 { margin-top: 1.4rem; }
+  .card { background: white; border: 1px solid #e0e6ee; border-radius: 10px;
+          padding: 1rem 1.3rem; margin: 1rem 0; box-shadow: 0 1px 4px rgba(0,0,0,.05); }
+  .steg { display: flex; align-items: flex-start; gap: .7rem; margin: .6rem 0; }
+  .nr { background: #0a66c2; color: white; border-radius: 50%; min-width: 1.6rem;
+        height: 1.6rem; display: flex; align-items: center; justify-content: center;
+        font-weight: 700; font-size: .85rem; margin-top: .15rem; }
+  .knapp { display: inline-block; background: #ff4b4b; color: white; padding: 2px 12px;
+           border-radius: 6px; font-size: .85rem; font-weight: 600; white-space: nowrap; }
+  .knapp2 { display: inline-block; background: #f0f2f6; color: #333; padding: 2px 12px;
+            border-radius: 6px; font-size: .85rem; font-weight: 600; border: 1px solid #d5dae3;
+            white-space: nowrap; }
+  .tratt { margin: 1.5rem auto; max-width: 560px; }
+  .tratt div { color: white; text-align: center; padding: .55rem; margin: .3rem auto;
+               border-radius: 8px; font-weight: 600; font-size: .92rem; }
+  .t1 { width: 100%; background: #64748b; }
+  .t2 { width: 88%; background: #0a66c2; }
+  .t3 { width: 76%; background: #0d8de0; }
+  .t4 { width: 64%; background: #38bdf8; }
+  .t5 { width: 52%; background: #f59e0b; }
+  .t6 { width: 40%; background: #fb923c; }
+  .t7 { width: 28%; background: #22c55e; }
+  .tips { background: #fffbeb; border-left: 4px solid #f59e0b; padding: .6rem 1rem;
+          border-radius: 6px; margin: .8rem 0; font-size: .92rem; }
+  .auto { background: #f0fdf4; border-left: 4px solid #22c55e; padding: .6rem 1rem;
+          border-radius: 6px; margin: .8rem 0; font-size: .92rem; }
+  .flow { background: #1a1a2e; color: #e2e8f0; padding: 1rem 1.3rem; border-radius: 10px;
+          font-family: 'SF Mono', Menlo, monospace; font-size: .82rem; overflow-x: auto;
+          white-space: pre; line-height: 1.7; }
+  table { border-collapse: collapse; width: 100%; margin: .8rem 0; background: white; }
+  th, td { border: 1px solid #e0e6ee; padding: .5rem .8rem; text-align: left; font-size: .92rem; }
+  th { background: #eef4fb; }
+  .toc { background: white; border: 1px solid #e0e6ee; border-radius: 10px;
+         padding: 1rem 1.5rem; }
+  .toc a { color: #0a66c2; text-decoration: none; }
+  @media print { body { background: white; } h2 { break-after: avoid; } .card { break-inside: avoid; } }
+</style>
+</head>
+<body>
+
+<h1>📊 Sales pipeline — IHA<br><span style="font-size:1rem;color:#64748b;">Superenkel manual</span></h1>
+
+<div class="toc">
+<strong>Innehåll</strong><br>
+<a href="#tratten">Så funkar tratten</a> ·
+<a href="#rutin">Din dagliga rutin</a> ·
+<a href="#idag">🏠 Idag</a> ·
+<a href="#hitta">🔍 Hitta bolag</a> ·
+<a href="#leads">🌱 Leads</a> ·
+<a href="#svar">💬 Svar &amp; uppföljning</a> ·
+<a href="#moten">📅 Möten</a> ·
+<a href="#pipeline">💰 Pipeline</a> ·
+<a href="#agent">🧠 David Agent</a> ·
+<a href="#oversikt">📊 Översikt</a> ·
+<a href="#strul">Om något strular</a>
+</div>
+
+<!-- ══════════════════════════════════════════════════ -->
+<h2 id="tratten">Så funkar tratten — hela idén på 30 sekunder</h2>
+
+<div class="card">
+<p>Appen är en <strong>tratt</strong>. Bolag åker in i toppen, signerade IHA-affärer kommer ut i botten.
+Menyn i vänsterkanten följer tratten <strong>uppifrån och ner</strong> — jobba i den ordningen.</p>
+
+<div class="tratt">
+  <div class="t1">🔍 Hitta bolag — Allabolag hittar bolag med kapital i lager</div>
+  <div class="t2">🌱 Leads — hitta rätt person + godkänn</div>
+  <div class="t3">✉️ Kontakta — mejl eller LinkedIn-DM</div>
+  <div class="t4">💬 Svar — agenten läser och föreslår ditt nästa drag</div>
+  <div class="t5">📅 Möte bokat — deal skapas AUTOMATISKT (45 000 kr)</div>
+  <div class="t6">💰 IHA Proposal — offert ute</div>
+  <div class="t7">✅ Signed Contract</div>
+</div>
+
+<p><strong>Gyllene regeln:</strong> appen förbereder allt, men <em>du</em> trycker alltid på skicka.
+Den skickar aldrig något själv.</p>
+</div>
+
+<!-- ══════════════════════════════════════════════════ -->
+<h2 id="rutin">Din dagliga rutin — 20 minuter</h2>
+
+<div class="card">
+<div class="steg"><div class="nr">1</div><div>Öppna <strong>🧠 David Agent</strong> → tryck <span class="knapp">☀️ Generera dagstart</span>. Du får dagens fokus + första åtgärd.</div></div>
+<div class="steg"><div class="nr">2</div><div>Gå till <strong>💬 Svar &amp; uppföljning</strong> → tryck <span class="knapp2">🔄 Hämta olästa email-svar</span>. Behandla det som kommit in.</div></div>
+<div class="steg"><div class="nr">3</div><div>Kolla fliken <strong>🔔 Uppföljningar</strong> — mejla eller ring de som väntat 3/7 dagar.</div></div>
+<div class="steg"><div class="nr">4</div><div>Har du 10 min över? Gå till <strong>🌱 Leads</strong> och kontakta 2–3 nya bolag.</div></div>
+<div class="steg"><div class="nr">5</div><div>På kvällen: <strong>🧠 David Agent</strong> → skriv 3 rader i <strong>🌙 Kvällsreflektion</strong>.</div></div>
+</div>
+
+<!-- ══════════════════════════════════════════════════ -->
+<h2 id="idag">🏠 Idag — startsidan</h2>
+<div class="card">
+<p><strong>Vad den gör:</strong> visar kort med siffror — hur många leads som väntar, svar att hantera, uppföljningar och möten. Varje kort har en knapp som tar dig till rätt sida.</p>
+<p><strong>Vad du gör:</strong> ingenting särskilt — använd den som karta. Börja med kortet som har högst siffra.</p>
+</div>
+
+<!-- ══════════════════════════════════════════════════ -->
+<h2 id="hitta">🔍 Hitta bolag — toppen av tratten</h2>
+<div class="card">
+<p><strong>Vad den gör:</strong> söker på Allabolag efter bolag där mycket kapital sitter fast i lager. Gratis, publika bokslutssiffror.</p>
+
+<div class="steg"><div class="nr">1</div><div>Välj <strong>bransch</strong> och <strong>län</strong> (eller "Hela Sverige"). Du kan även skriva ett eget nyckelord, t.ex. <em>solceller</em>.</div></div>
+<div class="steg"><div class="nr">2</div><div>Tryck <span class="knapp">🔎 Screena bolag</span> och vänta — appen läser bokslut per bolag.</div></div>
+<div class="steg"><div class="nr">3</div><div>Titta i tabellen: högst <strong>IHA-score</strong> överst = mest bundet kapital + sämst marginal = bäst kandidat.</div></div>
+<div class="steg"><div class="nr">4</div><div>Tryck <span class="knapp">💾 Spara kvalificerade som leads</span>.</div></div>
+
+<div class="auto">🤖 <strong>Automatiskt:</strong> bolag du redan har (leads, kontaktade, avböjda) filtreras bort ur resultatet. VD/ledning från Bolagsverket följer med på köpet.</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════ -->
+<h2 id="leads">🌱 Leads — hitta person och ta kontakt</h2>
+<div class="card">
+<p><strong>Vad den gör:</strong> här ligger sparade bolag som väntar på att du hittar rätt person och tar första kontakten.</p>
+
+<div class="steg"><div class="nr">1</div><div>Tryck <span class="knapp2">🔍 Person</span> på ett kort — appen letar upp rätt person (hemsida + LinkedIn) och e-postadress.</div></div>
+<div class="steg"><div class="nr">2</div><div>Öppna <strong>📧 Skriv &amp; skicka mejl</strong> → tryck <span class="knapp2">✍️ Skriv utkast</span>. Mejlet anpassas efter mottagarens roll (VD/CFO/Inköpschef) och bolagets egna siffror.</div></div>
+<div class="steg"><div class="nr">3</div><div>Läs igenom, ändra det du vill, tryck <span class="knapp">📨 Skicka mejl</span>.</div></div>
+<div class="steg"><div class="nr">4</div><div>Eller: tryck <span class="knapp">✅ Godkänn</span> för att lägga kontakten i pipeline och ta LinkedIn-vägen istället.</div></div>
+
+<div class="tips">💡 Står det <strong>"✅ Mejl skickat [datum]"</strong> på ett kort har du redan mejlat bolaget — ingen risk för dubbletter.</div>
+<div class="tips">💡 Visar utkastet <strong>"🔴 Låg confidence"</strong> — läs extra noga innan du skickar. Appen saknar då bolagsspecifika siffror.</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════ -->
+<h2 id="svar">💬 Svar &amp; uppföljning — hjärtat i vardagen</h2>
+<div class="card">
+<h3>Fliken 💬 Svar att hantera</h3>
+
+<div class="steg"><div class="nr">1</div><div>Tryck <span class="knapp2">🔄 Hämta olästa email-svar</span> — appen läser din inkorg (bara mejl från folk du kontaktat).</div></div>
+<div class="steg"><div class="nr">2</div><div>Tryck <span class="knapp">🤖 Behandla</span> på varje svar — agenten läser det, bedömer läget och skriver ett färdigt förslag på ditt nästa meddelande.</div></div>
+<div class="steg"><div class="nr">3</div><div>Redigera förslaget om du vill → tryck <span class="knapp">📨 Skicka via mejl</span>. Klart — skickat, loggat och hanterat i ett klick.</div></div>
+
+<p>LinkedIn-svar? Klistra in dem i rutan <strong>➕ Klistra in ett svar</strong> så behandlas de likadant.</p>
+
+<div class="auto">🤖 <strong>Automatiskt:</strong> autosvar ("jag är på semester, åter 3 augusti") fastnar aldrig i kön. Appen läser återkomstdatumet, pausar uppföljningen till efter semestern och markerar svaret som hanterat. Du ser bara en notis.</div>
+
+<h3>Fliken 🔔 Uppföljningar</h3>
+<p>Kontakter som inte svarat dyker upp här automatiskt — dag 3 och dag 7. Tre sätt att agera per kontakt:</p>
+<table>
+<tr><th>Flik</th><th>Vad som händer</th></tr>
+<tr><td><strong>📧 Mejla uppföljning</strong></td><td>Appen skriver ett nytt företagsunikt mejl → du skickar</td></tr>
+<tr><td><strong>📞 Ring</strong></td><td>Tryck "Skriv ringmanus" → läs rakt av → bekräfta hur det gick</td></tr>
+<tr><td><strong>✔️ Markera manuellt</strong></td><td>Följde du upp via LinkedIn? Bekräfta här så loggas det</td></tr>
+</table>
+<div class="tips">💡 Väljer du "Bokade möte" i ring-fliken skapas mötet OCH pipeline-dealen automatiskt.</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════ -->
+<h2 id="moten">📅 Möten</h2>
+<div class="card">
+<p><strong>Vad den gör:</strong> listar dina bokade möten med kontaktinfo och bolagets siffror som förberedelse.</p>
+<p><strong>Vad du gör:</strong> bokar in möten på kontakter, ser dagens möten inför samtal.</p>
+<div class="auto">🤖 <strong>Automatiskt:</strong> när du bokar ett möte skapas ett deal i 💰 Pipeline — Meeting-stage, 45 000 kr, alla kontaktuppgifter ifyllda.</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════ -->
+<h2 id="pipeline">💰 Pipeline — affärerna</h2>
+<div class="card">
+<p><strong>Vad den gör:</strong> spårar affärerna från bokat möte till kontrakt, med värde i kronor.</p>
+
+<div class="flow">Meeting (40%)  →  IHA Proposal (75%)  →  Signed Contract (100%)
+                                      ↘  Lost</div>
+
+<div class="steg"><div class="nr">1</div><div>Deals skapas automatiskt vid bokat möte — du behöver sällan lägga in dem själv.</div></div>
+<div class="steg"><div class="nr">2</div><div>Efter mötet: flytta dealen med <strong>dropdownen</strong> på kortet — skickade du offert väljer du "IHA Proposal".</div></div>
+<div class="steg"><div class="nr">3</div><div>Signerat? Välj "Signed Contract". Dött? "Lost" (hamnar i arkivet).</div></div>
+
+<p><strong>Weighted pipeline</strong> = summan av alla affärer × sannolikheten per steg.
+Det är din bästa prognos av kommande intäkter — även kontakter tidigt i tratten räknas med (45 000 kr × 5–15%).</p>
+<div class="tips">💡 Affär som kom utanför flödet (referral, gammal kund)? Använd <strong>➕ Nytt deal</strong> och fyll i själv.</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════ -->
+<h2 id="agent">🧠 David Agent — din dagcoach</h2>
+<div class="card">
+<table>
+<tr><th>Del</th><th>Vad den gör</th><th>När</th></tr>
+<tr><td><strong>☀️ Dagstart</strong></td><td>Läser hela tratten + ditt minne, ger dagens fokus + första åtgärd inom 10 min</td><td>Morgon</td></tr>
+<tr><td><strong>💬 Dagsagent</strong></td><td>Chatta om vad som helst — den minns tidigare samtal och kan pipelinen</td><td>När du kör fast</td></tr>
+<tr><td><strong>🎯 Snapshot</strong></td><td>Heta deals + weighted pipeline i kompakt vy</td><td>Snabbkoll</td></tr>
+<tr><td><strong>🌙 Kvällsreflektion</strong></td><td>Skriv 3 rader om dagen → sammanfattas och sparas i minnet</td><td>Kväll</td></tr>
+</table>
+<div class="tips">💡 Agenten är tränad på ditt mål: <strong>2 IHA Essential/månad = 90 000 kr = frihet</strong>. Den kommer flagga när du prokrastinerar.</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════ -->
+<h2 id="oversikt">📊 Översikt &amp; 📥 Importera</h2>
+<div class="card">
+<p><strong>📊 Översikt:</strong> hela kontaktlistan som tabell. Här ändrar du status manuellt, lägger till e-post/telefon och ser skickade mejl (expandern "📧 Skickade mejl").</p>
+<p><strong>📥 Importera kontakter:</strong> har du kontakter i Excel/CSV? Ladda upp dem här så hamnar de i pipelinen.</p>
+</div>
+
+<!-- ══════════════════════════════════════════════════ -->
+<h2 id="strul">Om något strular</h2>
+<div class="card">
+<table>
+<tr><th>Problem</th><th>Lösning</th></tr>
+<tr><td>Appen visar gammal kod / konstigt fel</td><td>Tryck <strong>"Relaunch to update"</strong> uppe till höger, eller starta om: <code>Ctrl+C</code> → <code>streamlit run app.py</code></td></tr>
+<tr><td>"SMTP är inte konfigurerat"</td><td>Kolla att <code>SMTP_USER</code> + <code>SMTP_PASS</code> finns i <code>.env</code>-filen, starta om appen</td></tr>
+<tr><td>Mejl kommer inte fram</td><td>Kolla 📊 Översikt → Skickade mejl att det loggats. Studsade det? Adressen är fel — hitta ny via 🌱 Leads → E-post</td></tr>
+<tr><td>Inga email-svar hämtas</td><td>Appen visar bara svar från adresser du mejlat. Nya kontakter? Mejla dem först via appen</td></tr>
+<tr><td>Bolag saknas i sökningen</td><td>Bolag du redan har filtreras bort automatiskt — kolla 🌱 Leads och 📊 Översikt först</td></tr>
+</table>
+<p style="margin-top:1rem;"><strong>Starta appen:</strong> öppna Terminal → <code>cd ~/Sales/linkedin_dm_agent</code> → <code>streamlit run app.py</code></p>
+</div>
+
+<p style="text-align:center;color:#94a3b8;font-size:.85rem;margin-top:3rem;">
+Sales pipeline — IHA · Manual uppdaterad juli 2026<br>
+Appen förbereder — du skickar. Alltid.
+</p>
+
+</body>
+</html>

@@ -184,9 +184,30 @@ def render():
                 prog0.progress((i + 1) / len(lan_list),
                                text=f"{lan}: {len(pooled)} bolag i bandet hittills...")
 
+            # Keyword-sweep: komplement till segmentering.
+            # Hittar bolag via branschbeskrivning (inte bara SNI-kod/finansiell storlek).
+            kw_list = screener.BRANSCH_KEYWORDS.get(bransch_val, [])
+            if kw_list:
+                kw_ort = ort if ort != "Hela Sverige" else "Sverige"
+                n_before = len(pooled)
+                with st.spinner(f"Keyword-sweep ({len(kw_list)} sökord) — kompletterar segmentering..."):
+                    kw_hits = allabolag.search_companies_multi(kw_list, ort=kw_ort)
+                added = 0
+                for c in kw_hits:
+                    key = c.get("orgnr") or c.get("bolag", "").lower()
+                    if key and key not in pooled:
+                        c["_from_keyword"] = True   # hoppar SNI-filtret (redan bransch-matchad)
+                        pooled[key] = c
+                        added += 1
+                if added:
+                    st.caption(f"➕ Keyword-sweep lade till {added} bolag utanför segmentering.")
+
             found = list(pooled.values())
+            # SNI-filter: segmentering-träffar filtreras på nace_code;
+            # keyword-träffar har redan bransch-matchats och hoppar filtret.
             in_bransch = [c for c in found
-                          if screener.nace_matches(c.get("nace_code", ""), prefixes)]
+                          if c.get("_from_keyword")
+                          or screener.nace_matches(c.get("nace_code", ""), prefixes)]
             survivors = [c for c in in_bransch
                          if screener.passes_prefilter(
                              c, oms_min=oms_min, oms_max=oms_max,
@@ -279,24 +300,50 @@ def render():
                     "Oms (MSEK)": r.get("omsattning_msek"),
                     "Anställda": r.get("anstallda"),
                     "Lagerandel %": r.get("lagerandel"),
-                    "Marginal %": r.get("vinstmarginal"),
+                    "Bruttomarg %": r.get("bruttomarginal"),
+                    "Vinstmarg %": r.get("vinstmarginal"),
                     "IHA-score": r.get("iha_score"),
                     "Orgnr": r.get("orgnr"),
                 } for r in q
             ]), use_container_width=True, hide_index=True)
 
+            # Befattningshavare (VD + ledning direkt från Allabolag/Bolagsverket)
+            all_befattn = [(r["bolag"], r.get("befattningshavare") or []) for r in q
+                           if r.get("befattningshavare")]
+            if all_befattn:
+                with st.expander(f"👤 Befattningshavare ({len(all_befattn)} bolag)"):
+                    for bolag_namn, bf in all_befattn:
+                        st.markdown(f"**{bolag_namn}**")
+                        for b in bf:
+                            st.caption(f"  {b['namn']} — {b['roll']}")
+
             if st.button("💾 Spara kvalificerade som leads", type="primary"):
+                _vd_keys = ["vd", "ceo", "verksamhetschef", "managing director",
+                            "general manager", "ägare"]
+
+                def _best_person(befattn: list) -> dict:
+                    for b in befattn:
+                        if any(k in b.get("roll", "").lower() for k in _vd_keys):
+                            return b
+                    return befattn[0] if befattn else {}
+
                 records = []
                 for r in q:
+                    befattn = r.get("befattningshavare") or []
+                    person = _best_person(befattn)
+                    brutto_str = (f", bruttomarg {r.get('bruttomarginal')}%"
+                                  if r.get("bruttomarginal") is not None else "")
                     records.append({
-                        "namn": "",
-                        "titel": "Inköpschef",
+                        "namn": person.get("namn", ""),
+                        "titel": person.get("roll", "") or "Inköpschef",
                         "bolag": r["bolag"],
                         "bransch": r.get("bransch", ""),
                         "linkedin_url": "",
                         "website": r.get("website", ""),
-                        "motivering": (f"Lagerandel {r.get('lagerandel')}%, marginal "
-                                       f"{r.get('vinstmarginal')}%, oms {r.get('omsattning_msek')} MSEK "
+                        "motivering": (f"Lagerandel {r.get('lagerandel')}%, "
+                                       f"vinstmarg {r.get('vinstmarginal')}%"
+                                       f"{brutto_str}, "
+                                       f"oms {r.get('omsattning_msek')} MSEK "
                                        f"— mycket kapital bundet i lager."),
                         "score": int(r.get("iha_score") or 0),
                         "status": "pending",
