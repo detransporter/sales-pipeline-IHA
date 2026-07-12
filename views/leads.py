@@ -154,15 +154,24 @@ def render():
         st.divider()
 
         # ── Sortering + filter (hjälper när listan är lång) ──────────────────
+        # Valet sparas i beständiga session-fält (…_v) så det minns sig även efter
+        # sidbyte — Streamlit rensar annars widget-state för sidor som inte visas.
+        SORT_OPTS = ["IHA-score (högst)", "Lagerandel (högst)", "Bolag (A–Ö)", "Nyast först"]
+        FILT_OPTS = ["Alla", "Saknar person", "Har person (redo att godkänna)",
+                     "Saknar hemsida/e-post"]
+        _s = st.session_state.get("leads_sort_v", SORT_OPTS[0])
+        _f = st.session_state.get("leads_filter_v", FILT_OPTS[0])
         scol, fcol = st.columns(2)
         with scol:
-            sort_by = st.selectbox(
-                "Sortera", ["IHA-score (högst)", "Lagerandel (högst)",
-                            "Bolag (A–Ö)", "Nyast först"], key="leads_sort")
+            sort_by = st.selectbox("Sortera", SORT_OPTS,
+                                   index=SORT_OPTS.index(_s) if _s in SORT_OPTS else 0,
+                                   key="leads_sort")
         with fcol:
-            filt = st.selectbox(
-                "Visa", ["Alla", "Saknar person", "Har person (redo att godkänna)",
-                         "Saknar hemsida/e-post"], key="leads_filter")
+            filt = st.selectbox("Visa", FILT_OPTS,
+                                index=FILT_OPTS.index(_f) if _f in FILT_OPTS else 0,
+                                key="leads_filter")
+        st.session_state["leads_sort_v"] = sort_by
+        st.session_state["leads_filter_v"] = filt
 
         def _num(v):
             try:
