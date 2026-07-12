@@ -524,7 +524,7 @@ def _page_matches_company(html: str, bolag: str) -> bool:
     return any(t in low for t in tokens[:2]) if tokens else True
 
 
-def guess_company_website(bolag: str, max_probes: int = 10) -> str:
+def guess_company_website(bolag: str, max_probes: int = 12) -> str:
     """
     Gissa och VERIFIERA ett bolags hemsida GRATIS (ingen Apify): prova troliga
     domäner ur namnet och läs dem med vanlig HTTP. Returnerar en URL bara om
@@ -537,13 +537,14 @@ def guess_company_website(bolag: str, max_probes: int = 10) -> str:
     probes = 0
     for stem in _company_domain_stems(bolag):
         for tld in (".se", ".com", ".nu"):
-            if probes >= max_probes:
-                return ""
-            url = f"https://www.{stem}{tld}"
-            probes += 1
-            html = _probe(url)
-            if html and _page_matches_company(html, bolag):
-                return url
+            # Prova både www och naken domän (vissa sajter serveras bara på apex).
+            for url in (f"https://www.{stem}{tld}", f"https://{stem}{tld}"):
+                if probes >= max_probes:
+                    return ""
+                probes += 1
+                html = _probe(url)
+                if html and _page_matches_company(html, bolag):
+                    return url
     return ""
 
 
