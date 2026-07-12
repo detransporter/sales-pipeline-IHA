@@ -10,6 +10,12 @@ from database import supabase_client as db
 from views.shared import (goto, person_link_inline, render_company_analysis,
                           render_email_composer, log_sent_email)
 
+# Open Brain-minnet (tålig import — kortet funkar även utan det).
+try:
+    from brain import open_brain as _brain
+except Exception:
+    _brain = None
+
 
 def render():
     st.title("🌱 Leads")
@@ -307,6 +313,23 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                                               placeholder="+46 70 123 45 67")
                     if st.form_submit_button("💾 Spara"):
                         try:
+                            # Rättningsfångst: skriver David över en AGENT-gissning
+                            # (fanns ett namn förut som nu ändras)? Spara lärdomen i
+                            # Open Brain så framtida sökningar undviker samma miss.
+                            _old_namn = (l.get("namn") or "").strip()
+                            if (m_namn.strip() and _old_namn
+                                    and m_namn.strip() != _old_namn
+                                    and _brain and _brain.is_configured()):
+                                try:
+                                    _brain.capture_thought(
+                                        f"[people_finder-rättning] {l.get('bolag','')} "
+                                        f"({l.get('bransch','')}): agenten gissade "
+                                        f"\"{_old_namn}\" men rätt person är "
+                                        f"\"{m_namn.strip()}\""
+                                        + (f", {m_titel.strip()}" if m_titel.strip() else "")
+                                        + ". Vikta den rollen/källan högre nästa gång."[:400])
+                                except Exception:
+                                    pass
                             if m_namn.strip():
                                 db.update_lead_suggestion_person(
                                     lid, m_namn.strip(), m_titel.strip(),
