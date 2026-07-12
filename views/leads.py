@@ -16,6 +16,52 @@ try:
 except Exception:
     _brain = None
 
+# Hur många leads auto-körningen bearbetar per omgång (personsök är långsamt/kostar,
+# så vi tar några i taget och ritar om — trilar igenom listan utan att frysa sidan).
+AUTO_BATCH = 3
+
+
+def _enrich_lead(l, contact_cache) -> dict:
+    """
+    Berika ETT lead: hemsida (gratis gissning) + e-post + telefon (gratis) och rätt
+    person (find_person — gratis web search först, Apify bara om krediter). Tålig:
+    fel på ett steg stoppar inte de andra. Returnerar vad som hittades.
+    """
+    lid = l["id"]
+    had_web = bool((l.get("website") or "").strip())
+    web = (l.get("website") or "").strip()
+    res = {"web": False, "mail": False, "tel": False, "person": False}
+
+    if not web:
+        try:
+            web = _apify.guess_company_website(l.get("bolag", "")) or ""
+        except Exception:
+            web = ""
+    if web:
+        try:
+            contact = _apify.find_emails(web, l.get("bolag", ""), render=False)
+            email = contact.get("best", "") or contact.get("guessed", "")
+            tel = contact.get("telefon", "")
+            contact_cache[lid] = {**contact, "website": web}
+            db.update_lead_suggestion_contact(lid, email=email, website=web, telefon=tel)
+            res["web"] = not had_web
+            res["mail"] = bool(contact.get("best"))
+            res["tel"] = bool(tel)
+        except Exception:
+            pass
+    if not l.get("namn"):
+        try:
+            found = people_finder.find_person(
+                l.get("bolag", ""), web, l.get("titel", ""), l.get("bransch", ""))
+            if found.get("namn"):
+                db.update_lead_suggestion_person(
+                    lid, found["namn"], found.get("titel", ""),
+                    found.get("linkedin_url", ""))
+                res["person"] = True
+        except Exception:
+            pass
+    return res
+
 
 def render():
     st.title("🌱 Leads")
@@ -54,60 +100,52 @@ def render():
                      if l.get("id") and (not (l.get("website") or "").strip()
                                          or not l.get("namn"))]
         if need_work:
-            st.caption(f"**{len(need_work)} nya leads** att bearbeta. Ett klick hittar hemsida, "
-                       f"e-post, telefon och rätt person för hela listan — hemsida/e-post/telefon "
-                       f"är gratis, personsök körs gratis (web search) och faller bara tillbaka "
-                       f"på Apify om det finns krediter.")
-            if st.button(f"🚀 Bearbeta {len(need_work)} nya leads", type="primary",
-                         key="bulk_enrich"):
+            bcol, tcol = st.columns([2, 1])
+            with bcol:
+                run_now = st.button(f"🚀 Bearbeta {len(need_work)} nya leads",
+                                    type="primary", key="bulk_enrich",
+                                    use_container_width=True)
+            with tcol:
+                auto = st.toggle(
+                    "⚡ Auto", key="auto_enrich",
+                    help="Bearbetar nya leads automatiskt, några i taget, tills listan är "
+                         "klar. Startar av sig själv när du sparar nya leads. Drar krediter "
+                         "för personsök — stäng av när du vill.")
+            st.caption("Hittar hemsida, e-post, telefon och rätt person. Hemsida/e-post/"
+                       "telefon är gratis; personsök körs gratis (web search) och faller "
+                       "bara tillbaka på Apify om det finns krediter.")
+
+            # ── Manuell körning: hela listan i ett svep med progressbar ──
+            if run_now:
                 prog = st.progress(0.0, text="Bearbetar leads...")
-                web_n = mail_n = tel_n = pers_n = 0
+                tot = {"web": 0, "mail": 0, "tel": 0, "person": 0}
                 for i, l in enumerate(need_work):
-                    lid = l["id"]
-                    had_web = bool((l.get("website") or "").strip())
-                    web = (l.get("website") or "").strip()
-                    # 1. Hemsida (gratis gissning) + e-post + telefon
-                    if not web:
-                        try:
-                            web = _apify.guess_company_website(l.get("bolag", "")) or ""
-                        except Exception:
-                            web = ""
-                    if web:
-                        try:
-                            contact = _apify.find_emails(web, l.get("bolag", ""), render=False)
-                            email = contact.get("best", "") or contact.get("guessed", "")
-                            tel = contact.get("telefon", "")
-                            contact_cache[lid] = {**contact, "website": web}
-                            db.update_lead_suggestion_contact(lid, email=email,
-                                                              website=web, telefon=tel)
-                            if not had_web:
-                                web_n += 1
-                            if contact.get("best"):
-                                mail_n += 1
-                            if tel:
-                                tel_n += 1
-                        except Exception:
-                            pass
-                    # 2. Person (find_person: gratis web search först, Apify om krediter)
-                    if not l.get("namn"):
-                        try:
-                            found = people_finder.find_person(
-                                l.get("bolag", ""), web, l.get("titel", ""), l.get("bransch", ""))
-                            if found.get("namn"):
-                                db.update_lead_suggestion_person(
-                                    lid, found["namn"], found.get("titel", ""),
-                                    found.get("linkedin_url", ""))
-                                pers_n += 1
-                        except Exception:
-                            pass
+                    r = _enrich_lead(l, contact_cache)
+                    for k in tot:
+                        tot[k] += int(r[k])
                     prog.progress((i + 1) / len(need_work),
                                   text=f"Bearbetat {i + 1}/{len(need_work)} bolag")
                 st.session_state["apify_credit"] = _apify.remaining_usage_usd()
-                st.success(f"Klart — av {len(need_work)}: hemsida +{web_n}, e-post +{mail_n}, "
-                           f"telefon +{tel_n}, person +{pers_n}. Verifiera innan du kontaktar.")
-                if _apify.LAST_APIFY_ERROR:
-                    st.caption(f"ℹ️ {_apify.LAST_APIFY_ERROR}")
+                st.success(f"Klart — av {len(need_work)}: hemsida +{tot['web']}, e-post "
+                           f"+{tot['mail']}, telefon +{tot['tel']}, person +{tot['person']}.")
                 st.rerun()
+
+            # ── Auto-körning: trilar igenom listan i satser, self-terminating ──
+            # Varje lead försöks EN gång per session (auto_done) så leads som inte
+            # går att hitta inte loopar för evigt.
+            done_ids = st.session_state.setdefault("auto_done", set())
+            todo = [l for l in need_work if l["id"] not in done_ids]
+            if auto and todo:
+                batch = todo[:AUTO_BATCH]
+                done_before = len(need_work) - len(todo)
+                with st.spinner(f"⚡ Auto-bearbetar… {done_before + len(batch)}/{len(need_work)}"):
+                    for l in batch:
+                        _enrich_lead(l, contact_cache)
+                        done_ids.add(l["id"])
+                st.session_state["apify_credit"] = _apify.remaining_usage_usd()
+                st.rerun()          # fortsätt med nästa sats
+            elif auto:
+                st.caption("✅ Auto-bearbetning klar för den här omgången.")
         else:
             st.caption("✅ Alla leads har hemsida och person — godkänn nedan för pipeline.")
 
