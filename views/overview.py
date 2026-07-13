@@ -24,11 +24,21 @@ def render():
 
     st.divider()
     st.subheader("Pipeline")
+    # Kom ihåg val mellan sidbyten (Streamlit rensar widget-state för sidor
+    # som inte visas — spegla därför till egna _v-nycklar).
+    _status_opts = ["Alla"] + PIPELINE_STATUSES
+    _sf = st.session_state.get("ov_status_v", _status_opts[0])
+    _ms = st.session_state.get("ov_minscore_v", 0)
     col1, col2 = st.columns(2)
     with col1:
-        status_filter = st.selectbox("Status", ["Alla"] + PIPELINE_STATUSES)
+        status_filter = st.selectbox(
+            "Status", _status_opts,
+            index=_status_opts.index(_sf) if _sf in _status_opts else 0,
+            key="ov_status")
     with col2:
-        min_score = st.slider("Min. score", 0, 20, 0)
+        min_score = st.slider("Min. score", 0, 20, _ms, key="ov_minscore")
+    st.session_state["ov_status_v"] = status_filter
+    st.session_state["ov_minscore_v"] = min_score
 
     try:
         status_param = None if status_filter == "Alla" else status_filter

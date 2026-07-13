@@ -304,10 +304,24 @@ def _render_followup_card(item):
             st.error(f"Fel: {e}")
 
     with st.container(border=True):
-        st.markdown(f"### {p['namn']} @ {p.get('bolag','')}")
-        st.caption(f"{label} · Kontaktad, inget svar ännu · "
-                   + person_link_inline(p.get("namn", ""), p.get("bolag", ""),
-                                        p.get("linkedin_url", "")))
+        head, act = st.columns([5, 1])
+        with head:
+            st.markdown(f"### {p['namn']} @ {p.get('bolag','')}")
+            st.caption(f"{label} · Kontaktad, inget svar ännu · "
+                       + person_link_inline(p.get("namn", ""), p.get("bolag", ""),
+                                            p.get("linkedin_url", "")))
+        with act:
+            # Alltid synlig: avvisa kunden direkt utan att gräva i flikarna.
+            if st.button("🚫 Avvisa", key=f"fu_reject_{pid}",
+                         use_container_width=True,
+                         help="Markera som inte intresserad och ta bort ur "
+                              "uppföljningskön."):
+                try:
+                    db.update_prospect_status(pid, "avbojd")
+                    st.success(f"Avvisade {p.get('bolag','kunden')}.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Fel: {e}")
 
         tab_mail, tab_call, tab_other = st.tabs(
             ["📧 Mejla uppföljning", "📞 Ring", "✔️ Markera manuellt"])
