@@ -3,10 +3,21 @@
 import pandas as pd
 import streamlit as st
 
+from datetime import date, timedelta
+
 from agents import learning
+from agents.followup import postpone_followup
 from agents.qualifier import qualify_reply
 from database import supabase_client as db
 from views.shared import PIPELINE_STATUSES
+
+# Vilket uppföljningssteg en kontakt är på väg mot, givet nuvarande status.
+# Styr tröskeln när kontakten dyker upp igen efter en uppskjutning.
+_NEXT_ACTION = {
+    "skickad": "followup_1",
+    "followup_1": "followup_2",
+    "followup_2": "close",
+}
 
 
 def render():
@@ -61,7 +72,8 @@ def render():
                                     list(prospect_labels.keys()), key="edit_pick")
         chosen = prospect_labels[chosen_label]
 
-        tab_edit, tab_status, tab_delete = st.tabs(["✏️ Uppgifter", "🔄 Status", "🗑️ Ta bort"])
+        tab_edit, tab_status, tab_snooze, tab_delete = st.tabs(
+            ["✏️ Uppgifter", "🔄 Status", "📅 Skjut upp", "🗑️ Ta bort"])
 
         with tab_edit:
             with st.form("edit_prospect"):
@@ -118,6 +130,42 @@ def render():
                     st.rerun()
                 except Exception as e:
                     st.error(f"Fel: {e}")
+
+        with tab_snooze:
+            cur = chosen.get("status", "ej_kontaktad")
+            action = _NEXT_ACTION.get(cur)
+            if not action:
+                st.info("Skjut upp gäller kontakter som redan är kontaktade och väntar "
+                        "på uppföljning (status *skickad*, *followup_1* eller *followup_2*). "
+                        f"Den här kontakten har status **{cur}**.")
+            else:
+                st.caption("Mottagaren på semester? Flytta fram nästa kontakt så att "
+                           "bolaget försvinner ur uppföljningsflödet och dyker upp igen "
+                           "den dag du väljer.")
+                sc1, sc2, sc3 = st.columns(3)
+                quick = None
+                if sc1.button("+1 vecka", key="ov_pp1", use_container_width=True):
+                    quick = date.today() + timedelta(days=7)
+                if sc2.button("+2 veckor", key="ov_pp2", use_container_width=True):
+                    quick = date.today() + timedelta(days=14)
+                if sc3.button("Efter 15 aug", key="ov_pp3", use_container_width=True):
+                    quick = max(date.today() + timedelta(days=1),
+                                date(date.today().year, 8, 15))
+                valt = st.date_input("…eller välj datum",
+                                     value=date.today() + timedelta(days=14),
+                                     min_value=date.today() + timedelta(days=1),
+                                     key="ov_pp_date")
+                do_it = st.button("📅 Skjut upp till valt datum", key="ov_pp_go",
+                                  type="primary")
+                target = quick or (valt if do_it else None)
+                if target:
+                    try:
+                        postpone_followup(chosen["id"], action, target)
+                        st.success(f"✅ Uppskjuten — {chosen.get('bolag','kontakten')} "
+                                   f"dyker upp igen {target.isoformat()}.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Fel: {e}")
 
         with tab_delete:
             st.warning(f"Du håller på att ta bort **{chosen.get('namn')} — "
