@@ -417,21 +417,23 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
             # ── Flik: manuell kontakt (när automatik inte hittar rätt person) ──
             with tab_kontakt:
                 with st.form(key=f"manual_{lid}"):
-                    m_namn  = st.text_input("Namn", value=l.get("namn", ""),
+                    # OBS: .get(key, "") ger None om kolumnen finns men är null →
+                    # text_input returnerar då None och .strip() kraschar. Tvinga str.
+                    m_namn  = st.text_input("Namn", value=l.get("namn") or "",
                                             placeholder="Anna Lindqvist")
-                    m_titel = st.text_input("Roll", value=l.get("titel", ""),
+                    m_titel = st.text_input("Roll", value=l.get("titel") or "",
                                             placeholder="Inköpschef")
                     m_li    = st.text_input("LinkedIn-URL (valfritt)",
-                                            value=l.get("linkedin_url", ""),
+                                            value=l.get("linkedin_url") or "",
                                             placeholder="https://linkedin.com/in/...")
                     c1, c2 = st.columns(2)
                     with c1:
                         m_email = st.text_input("E-post (valfritt)",
-                                                value=l.get("email", ""),
+                                                value=l.get("email") or "",
                                                 placeholder="anna.lindqvist@foretag.se")
                     with c2:
                         m_tel = st.text_input("Telefon (valfritt)",
-                                              value=l.get("telefon", ""),
+                                              value=l.get("telefon") or "",
                                               placeholder="+46 70 123 45 67")
                     if st.form_submit_button("💾 Spara"):
                         try:
@@ -441,8 +443,8 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                             #     själv (t.ex. via hemsidan) — den mest värdefulla signalen.
                             # Sparas → återanvänds av find_person för liknande bolag.
                             _old = (l.get("namn") or "").strip()
-                            _new = m_namn.strip()
-                            _rol = m_titel.strip()
+                            _new = (m_namn or "").strip()
+                            _rol = (m_titel or "").strip()
                             if _new and _new != _old and _brain and _brain.is_configured():
                                 if _old:
                                     _note = (f"[people_finder-rättning] {l.get('bolag','')} "
@@ -461,14 +463,16 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                                     _brain.capture_thought(_note[:400])
                                 except Exception:
                                     pass
-                            if m_namn.strip():
+                            _li = (m_li or "").strip()
+                            _email = (m_email or "").strip()
+                            _tel = (m_tel or "").strip()
+                            if _new:
                                 db.update_lead_suggestion_person(
-                                    lid, m_namn.strip(), m_titel.strip(),
-                                    m_li.strip())
-                            if m_email.strip() or m_tel.strip() or website:
+                                    lid, _new, _rol, _li)
+                            if _email or _tel or website:
                                 db.update_lead_suggestion_contact(
-                                    lid, email=m_email.strip(),
-                                    website=website, telefon=m_tel.strip())
+                                    lid, email=_email,
+                                    website=website, telefon=_tel)
                             st.success("Sparat!")
                             st.rerun()
                         except Exception as e:

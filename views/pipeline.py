@@ -29,11 +29,11 @@ def _deal_form(editing: dict | None = None):
     fk = st.session_state.get("deal_form_key", 0)
     c1, c2 = st.columns(2)
     with c1:
-        name = st.text_input("Kontaktnamn *", value=e.get("contact_name", ""),
+        name = st.text_input("Kontaktnamn *", value=e.get("contact_name") or "",
                              key=f"dl_name_{fk}")
         title = st.text_input("Titel", value=e.get("contact_title", "") or "",
                               key=f"dl_title_{fk}")
-        company = st.text_input("Bolag *", value=e.get("company", ""),
+        company = st.text_input("Bolag *", value=e.get("company") or "",
                                 key=f"dl_company_{fk}")
         email = st.text_input("E-post", value=e.get("email", "") or "",
                               key=f"dl_email_{fk}")

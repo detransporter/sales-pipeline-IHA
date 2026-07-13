@@ -66,15 +66,17 @@ def render():
         with tab_edit:
             with st.form("edit_prospect"):
                 r1c1, r1c2 = st.columns(2)
-                e_namn   = r1c1.text_input("Namn",    value=chosen.get("namn", ""))
-                e_titel  = r1c2.text_input("Roll/titel", value=chosen.get("titel", ""))
+                # .get(key, "") ger None om kolumnen är null → text_input returnerar
+                # None och .strip() nedan kraschar. Tvinga str med `or ""`.
+                e_namn   = r1c1.text_input("Namn",    value=chosen.get("namn") or "")
+                e_titel  = r1c2.text_input("Roll/titel", value=chosen.get("titel") or "")
                 r2c1, r2c2 = st.columns(2)
-                e_bolag  = r2c1.text_input("Bolag",   value=chosen.get("bolag", ""))
-                e_bransch= r2c2.text_input("Bransch", value=chosen.get("bransch", ""))
+                e_bolag  = r2c1.text_input("Bolag",   value=chosen.get("bolag") or "")
+                e_bransch= r2c2.text_input("Bransch", value=chosen.get("bransch") or "")
                 r3c1, r3c2 = st.columns(2)
-                e_email  = r3c1.text_input("E-post",  value=chosen.get("email", ""))
-                e_li     = r3c2.text_input("LinkedIn-URL", value=chosen.get("linkedin_url", ""))
-                e_website= st.text_input("Hemsida",   value=chosen.get("website", ""))
+                e_email  = r3c1.text_input("E-post",  value=chosen.get("email") or "")
+                e_li     = r3c2.text_input("LinkedIn-URL", value=chosen.get("linkedin_url") or "")
+                e_website= st.text_input("Hemsida",   value=chosen.get("website") or "")
                 if st.form_submit_button("💾 Spara ändringar", type="primary"):
                     try:
                         fields = {
