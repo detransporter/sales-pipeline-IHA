@@ -45,7 +45,8 @@ Inga förklaringar utanför JSON-blocket."""
 
 
 def _get_first_name(namn: str) -> str:
-    return namn.strip().split()[0] if namn.strip() else namn
+    namn = (namn or "").strip()
+    return namn.split()[0] if namn else ""
 
 
 def generate_dm_variants(namn: str, titel: str, bolag: str, bransch: str,
@@ -193,4 +194,8 @@ def generate_followup(namn: str, typ: str) -> str:
     """Generate follow-up message. typ: 'followup_1' or 'followup_2'."""
     fornamn = _get_first_name(namn)
     template = FOLLOWUP_TEMPLATES.get(typ, FOLLOWUP_TEMPLATES["followup_1"])
-    return template.format(fornamn=fornamn)
+    msg = template.format(fornamn=fornamn)
+    # Ingen känd kontaktperson? Städa "Hej ," → "Hej,".
+    if not fornamn:
+        msg = msg.replace("Hej ,", "Hej,")
+    return msg

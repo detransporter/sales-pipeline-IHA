@@ -306,7 +306,9 @@ def _render_followup_card(item):
     with st.container(border=True):
         head, act = st.columns([5, 1])
         with head:
-            st.markdown(f"### {p['namn']} @ {p.get('bolag','')}")
+            _namn = (p.get("namn") or "").strip()
+            _titel = f"{_namn} @ {p.get('bolag','')}" if _namn else p.get("bolag", "(okänt bolag)")
+            st.markdown(f"### {_titel}")
             st.caption(f"{label} · Kontaktad, inget svar ännu · "
                        + person_link_inline(p.get("namn", ""), p.get("bolag", ""),
                                             p.get("linkedin_url", "")))
