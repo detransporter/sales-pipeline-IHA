@@ -73,8 +73,12 @@ def _render_activity(days: int = 14):
     """Visa hur många kontakter du gjort per dag — mät din dagliga aktivitet."""
     try:
         data = db.get_daily_activity(days=days)
-    except Exception:
-        return  # aktivitetsmätaren får aldrig sänka startsidan
+    except Exception as e:
+        # Sänk aldrig startsidan — men visa en ledtråd om något gick fel.
+        st.divider()
+        st.markdown("#### 📈 Din aktivitet")
+        st.caption(f"Kunde inte läsa aktivitet just nu: {e}")
+        return
     if not data:
         return
 
