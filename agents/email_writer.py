@@ -26,7 +26,7 @@ load_dotenv()
 
 # Fable 5 efter A/B-test 2026-07-08 (samma beslut som IHA:s outreach-roll):
 # vassare hook, bättre regelefterlevnad, mänskligare ton. ~1,50 kr/mejl.
-MODEL = "claude-fable-5"
+MODEL = "claude-sonnet-5"
 
 SIGNATURE = (
     "Vänliga hälsningar,\n"
@@ -466,13 +466,13 @@ def generate_email(
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
     response = client.messages.create(
         model=MODEL,
-        # Fable 5 tänker innan den svarar och tänkandet räknas in i max_tokens —
+        # Modellen tänker innan den svarar och tänkandet räknas in i max_tokens —
         # 800 (gamla värdet) räckte inte till ett helt sexstyckesmejl.
         max_tokens=6000,
         system=_ROLE_INSTRUCTIONS[roll],
         messages=[{"role": "user", "content": user_msg}],
     )
-    # Plocka bara textblocken (Fable 5 kan inleda med ett tankeblock)
+    # Plocka bara textblocken (modellen kan inleda med ett tankeblock)
     raw = "".join(b.text for b in response.content if b.type == "text").strip()
 
     # Extrahera JSON
@@ -552,7 +552,7 @@ def generate_call_script(bolag, namn="", titel="", bransch="", orgnr="", website
         resp = client.messages.create(
             model=MODEL, max_tokens=3000, system=_CALL_SYSTEM,
             messages=[{"role": "user", "content": user_msg}])
-        # Plocka bara textblocken (Fable 5 kan inleda med ett tankeblock)
+        # Plocka bara textblocken (modellen kan inleda med ett tankeblock)
         return "".join(b.text for b in resp.content if b.type == "text").strip()
     except Exception:
         return ""
