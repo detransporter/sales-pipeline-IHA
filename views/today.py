@@ -66,6 +66,9 @@ def render():
                "hantera svar → följ upp → boka möte.")
 
 
+DAILY_GOAL = 20  # mål: antal kontakter per dag (nya, uppföljningar eller samtal)
+
+
 def _render_activity(days: int = 14):
     """Visa hur många kontakter du gjort per dag — mät din dagliga aktivitet."""
     try:
@@ -81,19 +84,44 @@ def _render_activity(days: int = 14):
     week_n = sum(d["antal"] for d in data[-7:])
     active_days = sum(1 for d in data[-7:] if d["antal"] > 0)
     snitt = round(week_n / 7, 1)
+    reached = today_n >= DAILY_GOAL
 
     st.divider()
     st.markdown("#### 📈 Din aktivitet")
     c1, c2, c3 = st.columns(3)
-    c1.metric("Kontaktade idag", today_n)
+    c1.metric("Kontaktade idag", f"{today_n} / {DAILY_GOAL}",
+              delta=("✅ Mål nått!" if reached else f"{DAILY_GOAL - today_n} kvar"),
+              delta_color=("normal" if reached else "off"))
     c2.metric("Senaste 7 dagarna", week_n, help=f"Aktiv {active_days} av 7 dagar")
     c3.metric("Snitt/dag (7 dgr)", snitt)
 
+    # Framstegsmätare mot dagens mål.
+    st.progress(min(today_n / DAILY_GOAL, 1.0))
+    if reached:
+        st.success(f"🎯 Dagens mål på {DAILY_GOAL} kontakter är nått — starkt jobbat!")
+    else:
+        st.caption(f"🎯 Mål: {DAILY_GOAL} kontakter/dag · "
+                   f"**{DAILY_GOAL - today_n} kvar** idag.")
+
+    # Graf med mållinje — gröna staplar = dagar då målet nåddes.
     df = pd.DataFrame(data)
     df["dag"] = pd.to_datetime(df["datum"]).dt.strftime("%a %d/%m")
-    st.bar_chart(df.set_index("dag")["antal"], height=180, color="#22c55e")
-    st.caption(f"Antal utgående kontakter per dag (mejl, DM, uppföljning, samtal) — "
-               f"senaste {days} dagarna.")
+    colors = ["#22c55e" if n >= DAILY_GOAL else "#94a3b8" for n in df["antal"]]
+    try:
+        import plotly.graph_objects as go
+        fig = go.Figure(go.Bar(x=df["dag"], y=df["antal"], marker_color=colors,
+                               text=df["antal"], textposition="outside"))
+        fig.add_hline(y=DAILY_GOAL, line_dash="dash", line_color="#ef4444",
+                      annotation_text=f"Mål {DAILY_GOAL}", annotation_position="top left")
+        fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=220,
+                          yaxis_title=None, xaxis_title=None, showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
+    except Exception:
+        # Faller tillbaka på enkel graf om plotly saknas.
+        st.bar_chart(df.set_index("dag")["antal"], height=200, color="#22c55e")
+    st.caption(f"Antal utgående kontakter per dag (mejl, DM, uppföljning, samtal) mot "
+               f"målet {DAILY_GOAL}/dag — senaste {days} dagarna. "
+               "Grön stapel = mål nått.")
 
 
 def _render_next_step(n_meetings, n_replies, n_followups, n_leads):
