@@ -439,6 +439,55 @@ def get_all_dm_history(typ: str | None = None) -> list[dict]:
     return result.data
 
 
+def get_daily_activity(days: int = 14) -> list[dict]:
+    """
+    Antal utgående kontakter per dag de senaste `days` dagarna.
+
+    Räknar varje faktiskt skickad rad i dm_history (mejl, DM, uppföljning, samtal)
+    på datumet i `skickad_at`. Dagar utan aktivitet fylls med 0 så grafen blir tät.
+    Returnerar [{"datum": "YYYY-MM-DD", "antal": n}, ...] äldst → nyast.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    client = get_client()
+    # Bara skickade rader (skickad_at satt). Hämta datum-fältet.
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    try:
+        rows = (
+            client.table("dm_history")
+            .select("skickad_at")
+            .eq("status", "skickad")
+            .gte("skickad_at", since)
+            .execute()
+        ).data
+    except Exception:
+        rows = []
+
+    # Räkna per lokalt (svenskt) datum. skickad_at är UTC → +2h approx sommartid.
+    counts: dict[str, int] = {}
+    for r in rows:
+        ts = r.get("skickad_at")
+        if not ts:
+            continue
+        try:
+            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            local = dt + timedelta(hours=2)  # grov Sverige-justering
+            key = local.date().isoformat()
+        except Exception:
+            key = str(ts)[:10]
+        counts[key] = counts.get(key, 0) + 1
+
+    # Fyll varje dag i fönstret, även nolldagar.
+    today = (datetime.now(timezone.utc) + timedelta(hours=2)).date()
+    out = []
+    for i in range(days - 1, -1, -1):
+        d = (today - timedelta(days=i)).isoformat()
+        out.append({"datum": d, "antal": counts.get(d, 0)})
+    return out
+
+
 # ── Eget minne (agent_memory) ───────────────────────────────────────────────
 
 def insert_memory(content: str, tags: str | None = None) -> dict:

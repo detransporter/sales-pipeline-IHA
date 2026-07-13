@@ -29,6 +29,10 @@ def render():
 
     # ── Nästa steg: den enda viktigaste saken just nu, rankad på brådska ──────
     _render_next_step(n_meetings, n_replies, n_followups, n_leads)
+
+    # ── Din aktivitet: hur många du kontaktar per dag ────────────────────────
+    _render_activity()
+
     st.divider()
     st.caption("Hela dagen i översikt:")
 
@@ -60,6 +64,36 @@ def render():
     st.divider()
     st.caption("Tips: följ korten i ordning — hitta bolag → godkänn leads → skicka DM → "
                "hantera svar → följ upp → boka möte.")
+
+
+def _render_activity(days: int = 14):
+    """Visa hur många kontakter du gjort per dag — mät din dagliga aktivitet."""
+    try:
+        data = db.get_daily_activity(days=days)
+    except Exception:
+        return  # aktivitetsmätaren får aldrig sänka startsidan
+    if not data:
+        return
+
+    import pandas as pd
+
+    today_n = data[-1]["antal"]
+    week_n = sum(d["antal"] for d in data[-7:])
+    active_days = sum(1 for d in data[-7:] if d["antal"] > 0)
+    snitt = round(week_n / 7, 1)
+
+    st.divider()
+    st.markdown("#### 📈 Din aktivitet")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Kontaktade idag", today_n)
+    c2.metric("Senaste 7 dagarna", week_n, help=f"Aktiv {active_days} av 7 dagar")
+    c3.metric("Snitt/dag (7 dgr)", snitt)
+
+    df = pd.DataFrame(data)
+    df["dag"] = pd.to_datetime(df["datum"]).dt.strftime("%a %d/%m")
+    st.bar_chart(df.set_index("dag")["antal"], height=180, color="#22c55e")
+    st.caption(f"Antal utgående kontakter per dag (mejl, DM, uppföljning, samtal) — "
+               f"senaste {days} dagarna.")
 
 
 def _render_next_step(n_meetings, n_replies, n_followups, n_leads):
