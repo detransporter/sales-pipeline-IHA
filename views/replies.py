@@ -311,17 +311,30 @@ def _render_followup_card(item):
                        + person_link_inline(p.get("namn", ""), p.get("bolag", ""),
                                             p.get("linkedin_url", "")))
         with act:
-            # Alltid synlig: avvisa kunden direkt utan att gräva i flikarna.
-            if st.button("🚫 Avvisa", key=f"fu_reject_{pid}",
-                         use_container_width=True,
-                         help="Markera som inte intresserad och ta bort ur "
-                              "uppföljningskön."):
-                try:
-                    db.update_prospect_status(pid, "avbojd")
-                    st.success(f"Avvisade {p.get('bolag','kunden')}.")
+            # Alltid synlig, men med bekräftelse så inget avvisas av misstag.
+            confirm_key = f"fu_reject_confirm_{pid}"
+            if not st.session_state.get(confirm_key):
+                if st.button("🚫 Avvisa", key=f"fu_reject_{pid}",
+                             use_container_width=True,
+                             help="Markera som inte intresserad och ta bort ur "
+                                  "uppföljningskön."):
+                    st.session_state[confirm_key] = True
                     st.rerun()
-                except Exception as e:
-                    st.error(f"Fel: {e}")
+            else:
+                st.caption("Säker?")
+                if st.button("✅ Ja, avvisa", key=f"fu_reject_yes_{pid}",
+                             type="primary", use_container_width=True):
+                    try:
+                        db.update_prospect_status(pid, "avbojd")
+                        st.session_state.pop(confirm_key, None)
+                        st.success(f"Avvisade {p.get('bolag','kunden')}.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Fel: {e}")
+                if st.button("Avbryt", key=f"fu_reject_no_{pid}",
+                             use_container_width=True):
+                    st.session_state.pop(confirm_key, None)
+                    st.rerun()
 
         tab_mail, tab_call, tab_other = st.tabs(
             ["📧 Mejla uppföljning", "📞 Ring", "✔️ Markera manuellt"])
