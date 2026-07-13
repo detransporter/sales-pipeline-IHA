@@ -62,6 +62,29 @@ def get_followups_due() -> list[dict]:
     return due
 
 
+def postpone_followup(prospect_id: str, action: str, until_date) -> None:
+    """
+    Skjut upp nästa kontakt till `until_date` (ett date-objekt).
+
+    Kontakten försvinner ur uppföljningskön och dyker upp igen på det valda
+    datumet. Mekanik: lägg ett dm vars `skickad_at` ankras så att dagräkningen
+    når tröskeln exakt på `until_date` (samma paus-trick som autosvar använder).
+    Bra när mottagaren är på semester.
+    """
+    threshold = {
+        "followup_1": FOLLOWUP_1_DAYS,
+        "followup_2": FOLLOWUP_2_DAYS,
+        "close": CLOSE_DAYS,
+    }.get(action, FOLLOWUP_1_DAYS)
+    anchor = until_date - timedelta(days=threshold)
+    dm = db.insert_dm(
+        prospect_id,
+        f"📅 Uppskjuten till {until_date.isoformat()} (mottagaren ej tillgänglig, "
+        f"t.ex. semester).",
+        typ="uppskjuten")
+    db.mark_dm_skickad(dm["id"], at=anchor.isoformat())
+
+
 def process_close(prospect_id: str) -> None:
     """Mark a prospect as inget_svar (no more follow-ups)."""
     db.update_prospect_status(prospect_id, "inget_svar")

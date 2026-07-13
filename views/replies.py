@@ -5,7 +5,7 @@ from datetime import date, timedelta
 import streamlit as st
 
 from agents import inbox_watcher
-from agents.followup import get_followups_due, process_close
+from agents.followup import get_followups_due, process_close, postpone_followup
 from database import supabase_client as db
 from views.shared import person_link_inline, render_email_composer, log_sent_email
 
@@ -337,6 +337,31 @@ def _render_followup_card(item):
                              use_container_width=True):
                     st.session_state.pop(confirm_key, None)
                     st.rerun()
+
+        # ── Skjut upp: mottagaren ledig? Flytta fram nästa kontakt ──────────
+        with st.expander("📅 Skjut upp (t.ex. semester)"):
+            st.caption("Flytta fram nästa kontaktdatum. Kontakten försvinner ur kön "
+                       "och dyker upp igen den dag du väljer.")
+            pc1, pc2, pc3 = st.columns(3)
+            quick = None
+            if pc1.button("+1 vecka", key=f"pp1_{pid}", use_container_width=True):
+                quick = date.today() + timedelta(days=7)
+            if pc2.button("+2 veckor", key=f"pp2_{pid}", use_container_width=True):
+                quick = date.today() + timedelta(days=14)
+            if pc3.button("Efter 15 aug", key=f"pp3_{pid}", use_container_width=True):
+                quick = max(date.today() + timedelta(days=1), date(date.today().year, 8, 15))
+            valt = st.date_input("…eller välj datum", value=date.today() + timedelta(days=14),
+                                 min_value=date.today() + timedelta(days=1),
+                                 key=f"pp_date_{pid}")
+            do_it = st.button("📅 Skjut upp till valt datum", key=f"pp_go_{pid}")
+            target = quick or (valt if do_it else None)
+            if target:
+                try:
+                    postpone_followup(pid, item["action"], target)
+                    st.success(f"✅ Uppskjuten — dyker upp igen {target.isoformat()}.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Fel: {e}")
 
         tab_mail, tab_call, tab_other = st.tabs(
             ["📧 Mejla uppföljning", "📞 Ring", "✔️ Markera manuellt"])

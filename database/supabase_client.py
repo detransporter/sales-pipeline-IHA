@@ -450,12 +450,12 @@ def get_daily_activity(days: int = 14) -> list[dict]:
     from datetime import datetime, timedelta, timezone
 
     client = get_client()
-    # Bara skickade rader (skickad_at satt). Hämta datum-fältet.
+    # Bara skickade rader (skickad_at satt). Hämta datum + typ.
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     try:
         rows = (
             client.table("dm_history")
-            .select("skickad_at")
+            .select("skickad_at, typ")
             .eq("status", "skickad")
             .gte("skickad_at", since)
             .execute()
@@ -463,9 +463,14 @@ def get_daily_activity(days: int = 14) -> list[dict]:
     except Exception:
         rows = []
 
+    # Typer som INTE är en riktig kontakt (paus/autosvar) räknas inte som aktivitet.
+    _ej_kontakt = {"uppskjuten", "autosvar", "pausad"}
+
     # Räkna per lokalt (svenskt) datum. skickad_at är UTC → +2h approx sommartid.
     counts: dict[str, int] = {}
     for r in rows:
+        if r.get("typ") in _ej_kontakt:
+            continue
         ts = r.get("skickad_at")
         if not ts:
             continue
