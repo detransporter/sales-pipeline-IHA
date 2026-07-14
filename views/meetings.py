@@ -5,6 +5,7 @@ from datetime import date
 import streamlit as st
 
 from database import supabase_client as db
+from views.shared import kategori_label
 
 
 def render():
@@ -23,9 +24,12 @@ def render():
             st.info("Inga bokade möten.")
         else:
             for m in meetings:
-                prospect_name = m.get("prospects", {}).get("namn", "Okänd") if m.get("prospects") else "Okänd"
-                bolag = m.get("prospects", {}).get("bolag", "") if m.get("prospects") else ""
-                with st.expander(f"{m['datum']} — {prospect_name} @ {bolag} [{m['status']}]"):
+                _p = m.get("prospects") or {}
+                prospect_name = _p.get("namn") or "Okänd"
+                bolag = _p.get("bolag") or ""
+                _kb = kategori_label(_p.get("kategori"))
+                _pre = f"{_kb} · " if _kb else ""
+                with st.expander(f"{m['datum']} — {_pre}{prospect_name} @ {bolag} [{m['status']}]"):
                     notes = st.text_area("Anteckningar", value=m.get("anteckningar") or "", key=f"notes_{m['id']}")
                     new_status = st.selectbox(
                         "Status",
@@ -44,7 +48,10 @@ def render():
         st.subheader("Boka nytt möte")
         try:
             prospects_all = db.get_prospects()
-            prospect_options = {f"{p['namn']} — {p['bolag']}": p for p in prospects_all}
+            prospect_options = {
+                f"{(kategori_label(p.get('kategori')) + ' · ') if p.get('kategori') else ''}"
+                f"{p.get('namn') or ''} — {p.get('bolag','')}": p
+                for p in prospects_all}
         except Exception as e:
             st.error(f"Fel: {e}")
             prospect_options = {}

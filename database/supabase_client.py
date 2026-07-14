@@ -197,7 +197,8 @@ def insert_meeting(prospect_id: str, datum: str) -> dict:
 
 def get_meetings(status: str | None = None) -> list[dict]:
     client = get_client()
-    query = client.table("meetings").select("*, prospects(namn, bolag, titel)").order("datum")
+    query = client.table("meetings").select(
+        "*, prospects(namn, bolag, titel, kategori)").order("datum")
     if status:
         query = query.eq("status", status)
     result = query.execute()
