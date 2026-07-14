@@ -7,7 +7,8 @@ import streamlit as st
 from agents import inbox_watcher
 from agents.followup import get_followups_due, process_close, postpone_followup
 from database import supabase_client as db
-from views.shared import person_link_inline, render_email_composer, log_sent_email
+from views.shared import (person_link_inline, render_email_composer, log_sent_email,
+                          kategori_label)
 
 
 def _reply_subject(prospect_id: str, bolag: str) -> str:
@@ -177,9 +178,10 @@ def _render_replies_tab():
             steg = stage_label(r.get("steg", ""))
             pid = (r.get("prospects") or {}).get("id") or r.get("prospect_id")
             email = (p.get("email") or "").strip()
+            _kb = kategori_label(p.get("kategori"))
             with st.container(border=True):
-                st.markdown(f"### {namn} @ {bolag}")
-                st.caption(f"Kategori: {kat} · Säljtrappa: {steg}")
+                st.markdown(f"### {(_kb + ' · ') if _kb else ''}{namn} @ {bolag}")
+                st.caption(f"Svarstyp: {kat} · Säljtrappa: {steg}")
                 st.markdown("**De skrev:**")
                 st.info(r.get("text", ""))
                 st.markdown("**Ditt nästa meddelande** (redigera och skicka):")
@@ -308,7 +310,8 @@ def _render_followup_card(item):
         with head:
             _namn = (p.get("namn") or "").strip()
             _titel = f"{_namn} @ {p.get('bolag','')}" if _namn else p.get("bolag", "(okänt bolag)")
-            st.markdown(f"### {_titel}")
+            _kb = kategori_label(p.get("kategori"))
+            st.markdown(f"### {(_kb + ' · ') if _kb else ''}{_titel}")
             st.caption(f"{label} · Kontaktad, inget svar ännu · "
                        + person_link_inline(p.get("namn", ""), p.get("bolag", ""),
                                             p.get("linkedin_url", "")))

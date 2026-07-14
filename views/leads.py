@@ -10,7 +10,7 @@ from integrations import email_sender
 from agents import company_analyzer
 from database import supabase_client as db
 from views.shared import (goto, person_link_inline, render_company_analysis,
-                          render_email_composer, log_sent_email)
+                          render_email_composer, log_sent_email, kategori_label)
 
 # Open Brain-minnet (tålig import — kortet funkar även utan det).
 try:
@@ -238,7 +238,9 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
     with st.container(border=True):
         cols = st.columns([3, 1, 1, 1, 1])
         with cols[0]:
-            st.markdown(f"**{l.get('bolag')}** — {l.get('titel')} · "
+            _kb = kategori_label(l.get("kategori"))
+            st.markdown(f"{(_kb + ' · ') if _kb else ''}"
+                        f"**{l.get('bolag')}** — {l.get('titel')} · "
                         f"_{l.get('bransch','')}_ (score {l.get('score', 0)})")
             if l.get("namn"):
                 st.markdown(f"👤 **{l['namn']}** · "
