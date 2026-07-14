@@ -72,7 +72,7 @@ PAGES = {
     "💰 Pipeline": pipeline.render,
     "🧠 David Agent": agent.render,
     "📊 Översikt": overview.render,
-    "📥 Importera kontakter": import_contacts.render,
+    "📥 Kontakter": import_contacts.render,
 }
 
 

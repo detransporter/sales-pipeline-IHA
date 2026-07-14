@@ -9,7 +9,7 @@ from agents import learning
 from agents.followup import postpone_followup
 from agents.qualifier import qualify_reply
 from database import supabase_client as db
-from views.shared import PIPELINE_STATUSES
+from views.shared import PIPELINE_STATUSES, KONTAKT_KATEGORIER, kategori_label
 
 # Vilket uppföljningssteg en kontakt är på väg mot, givet nuvarande status.
 # Styr tröskeln när kontakten dyker upp igen efter en uppskjutning.
@@ -38,22 +38,32 @@ def render():
     # Kom ihåg val mellan sidbyten (Streamlit rensar widget-state för sidor
     # som inte visas — spegla därför till egna _v-nycklar).
     _status_opts = ["Alla"] + PIPELINE_STATUSES
+    _kat_opts = ["Alla"] + KONTAKT_KATEGORIER
     _sf = st.session_state.get("ov_status_v", _status_opts[0])
+    _kf = st.session_state.get("ov_kategori_v", _kat_opts[0])
     _ms = st.session_state.get("ov_minscore_v", 0)
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         status_filter = st.selectbox(
             "Status", _status_opts,
             index=_status_opts.index(_sf) if _sf in _status_opts else 0,
             key="ov_status")
     with col2:
+        kat_filter = st.selectbox(
+            "Kategori", _kat_opts,
+            index=_kat_opts.index(_kf) if _kf in _kat_opts else 0,
+            key="ov_kategori")
+    with col3:
         min_score = st.slider("Min. score", 0, 20, _ms, key="ov_minscore")
     st.session_state["ov_status_v"] = status_filter
+    st.session_state["ov_kategori_v"] = kat_filter
     st.session_state["ov_minscore_v"] = min_score
 
     try:
         status_param = None if status_filter == "Alla" else status_filter
         prospects = db.get_prospects(status=status_param, min_score=min_score)
+        if kat_filter != "Alla":
+            prospects = [p for p in prospects if (p.get("kategori") or "") == kat_filter]
     except Exception as e:
         st.error(f"Fel: {e}")
         prospects = []
@@ -62,12 +72,14 @@ def render():
         st.info("Inga kontakter matchar filtret.")
     else:
         df = pd.DataFrame(prospects)
-        display_cols = [c for c in ["namn", "titel", "bolag", "bransch", "score", "status",
-                                    "created_at"] if c in df.columns]
+        display_cols = [c for c in ["kategori", "namn", "titel", "bolag", "bransch",
+                                    "score", "status", "created_at"] if c in df.columns]
         st.dataframe(df[display_cols], use_container_width=True, hide_index=True)
 
         st.subheader("Redigera kontakt")
-        prospect_labels = {f"{p['namn']} — {p['bolag']}": p for p in prospects}
+        prospect_labels = {
+            f"{kategori_label(p.get('kategori'))} {p.get('namn') or ''} — {p.get('bolag','')}".strip():
+            p for p in prospects}
         chosen_label = st.selectbox("Välj kontakt att redigera",
                                     list(prospect_labels.keys()), key="edit_pick")
         chosen = prospect_labels[chosen_label]
@@ -89,6 +101,11 @@ def render():
                 e_email  = r3c1.text_input("E-post",  value=chosen.get("email") or "")
                 e_li     = r3c2.text_input("LinkedIn-URL", value=chosen.get("linkedin_url") or "")
                 e_website= st.text_input("Hemsida",   value=chosen.get("website") or "")
+                _cur_kat = chosen.get("kategori") or KONTAKT_KATEGORIER[0]
+                e_kategori = st.selectbox(
+                    "Kategori", KONTAKT_KATEGORIER,
+                    index=(KONTAKT_KATEGORIER.index(_cur_kat)
+                           if _cur_kat in KONTAKT_KATEGORIER else 0))
                 if st.form_submit_button("💾 Spara ändringar", type="primary"):
                     try:
                         fields = {
@@ -99,6 +116,7 @@ def render():
                             "email": e_email.strip(),
                             "linkedin_url": e_li.strip(),
                             "website": e_website.strip(),
+                            "kategori": e_kategori,
                         }
                         db.update_prospect(chosen["id"], {k: v for k, v in fields.items() if v})
                         st.success("Sparat!")

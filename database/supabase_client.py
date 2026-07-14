@@ -23,10 +23,32 @@ def get_client() -> Client:
 
 # ── Prospects ──────────────────────────────────────────────────────────────
 
+# Valfria, nyare kolumner som en äldre databas kanske saknar. Skrivningar
+# faller tillbaka utan dem (och den som anropar kan visa ett SQL-tips).
+_OPTIONAL_COLS = ("kategori",)
+
+
 def insert_prospects(records: list[dict]) -> list[dict]:
     client = get_client()
     result = client.table("prospects").insert(records).execute()
     return result.data
+
+
+def insert_prospect(record: dict) -> dict:
+    """
+    Skapa EN kontakt manuellt. Tålig mot en databas som ännu saknar valfria
+    kolumner (t.ex. 'kategori') — försöker då igen utan dem.
+    """
+    client = get_client()
+    try:
+        result = client.table("prospects").insert(record).execute()
+        return result.data[0] if result.data else {}
+    except Exception:
+        slim = {k: v for k, v in record.items() if k not in _OPTIONAL_COLS}
+        if slim == record:
+            raise  # felet berodde inte på en valfri kolumn — låt det bubbla upp
+        result = client.table("prospects").insert(slim).execute()
+        return result.data[0] if result.data else {}
 
 
 def get_prospects(status: str | None = None, min_score: int = 0) -> list[dict]:
@@ -39,10 +61,17 @@ def get_prospects(status: str | None = None, min_score: int = 0) -> list[dict]:
 
 
 def update_prospect(prospect_id: str, fields: dict) -> dict:
-    """Uppdatera valfria fält på en kontakt."""
+    """Uppdatera valfria fält på en kontakt. Tålig mot saknade valfria kolumner."""
     client = get_client()
-    result = client.table("prospects").update(fields).eq("id", prospect_id).execute()
-    return result.data[0] if result.data else {}
+    try:
+        result = client.table("prospects").update(fields).eq("id", prospect_id).execute()
+        return result.data[0] if result.data else {}
+    except Exception:
+        slim = {k: v for k, v in fields.items() if k not in _OPTIONAL_COLS}
+        if slim == fields or not slim:
+            raise
+        result = client.table("prospects").update(slim).eq("id", prospect_id).execute()
+        return result.data[0] if result.data else {}
 
 
 def delete_prospect(prospect_id: str) -> bool:

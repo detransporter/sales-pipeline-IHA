@@ -21,6 +21,24 @@ PIPELINE_STATUSES = [
     "svar_ja", "svar_nej", "inget_svar", "mote_bokat", "avbojd",
 ]
 
+# Kategori på en kontakt — så David kan urskilja vem som är vad utan att minnas
+# allt. Används av manuell kontaktskapning, redigering och filter i Översikt.
+KONTAKT_KATEGORIER = [
+    "Prospekt", "Kund", "Partner", "Återförsäljare", "Leverantör", "Övrig",
+]
+KATEGORI_BADGE = {
+    "Prospekt": "🌱", "Kund": "💰", "Partner": "🤝",
+    "Återförsäljare": "🏪", "Leverantör": "📦", "Övrig": "•",
+}
+
+
+def kategori_label(kategori: str | None) -> str:
+    """'Kund' → '💰 Kund'. Tom kategori → ''."""
+    k = (kategori or "").strip()
+    if not k:
+        return ""
+    return f"{KATEGORI_BADGE.get(k, '•')} {k}"
+
 # Etiketter för mejlskrivarens rollspår och confidence.
 ROLL_LABEL = {"vd": "VD/Ägare", "cfo": "CFO/Ekonomichef",
               "scm": "Inköp/Supply Chain", "neutral": "Neutral (CFO-lutad)"}
