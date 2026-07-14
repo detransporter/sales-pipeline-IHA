@@ -320,6 +320,7 @@ def generate_email(
     lagerandel=None,
     varulager_msek=None,
     omsattning_msek=None,
+    resultat_msek=None,
     nyheter: str = "",
     language: str = "sv",
     orgnr: str = "",
@@ -340,25 +341,45 @@ def generate_email(
     """
     roll = _detect_role(titel)
 
-    # Berika: flerårstrend + företagsprofil → företagsunika krokar.
-    if history is None and orgnr:
+    # Berika: hämta bokslut (historik + bruttomarginal + aktuella tal) via orgnr.
+    bruttomarginal = None
+    if orgnr:
         try:
             from integrations import allabolag as _ab
             _fin = _ab.get_financials(orgnr=orgnr)
-            history = _fin.get("history") if _fin else None
+            if _fin:
+                if history is None:
+                    history = _fin.get("history")
+                bruttomarginal = _fin.get("bruttomarginal")
+                # Backfilla saknade aktuella tal ur bokslutet.
+                if omsattning_msek is None:
+                    omsattning_msek = _fin.get("omsattning_msek")
+                if varulager_msek is None:
+                    varulager_msek = _fin.get("varulager_msek")
+                if resultat_msek is None:
+                    resultat_msek = _fin.get("resultat_msek")
         except Exception:
-            history = None
-    trends = _financial_trends(history)
+            pass
+
+    # Deterministisk KPI-motor → exakt samma siffror som IHA-analysen.
+    from agents import iha_metrics
+    metrics = iha_metrics.compute(
+        bolag=bolag, bransch=bransch, omsattning_msek=omsattning_msek,
+        varulager_msek=varulager_msek, resultat_msek=resultat_msek,
+        bruttomarginal=bruttomarginal, lagerandel=lagerandel, history=history)
+    kpi = metrics.get("kpi", {})
+    insights = metrics.get("insights", [])
+    headline = metrics.get("headline", "")
+
     if not foretagsinfo and website:
         foretagsinfo = _company_profile(website)
 
     confidence, review_flag = _confidence(titel, lagerandel, varulager_msek, nyheter)
-    # En flerårstrend är stark, verifierbar personalisering → hög confidence.
-    if trends:
+    # Förberäknade, verifierbara krokar → hög confidence.
+    if insights:
         confidence, review_flag = "high", False
-    dos = _dos(varulager_msek, omsattning_msek)
 
-    # ── Faktablock ────────────────────────────────────────────────────────────
+    # ── Faktablock (djupa, förberäknade nyckeltal — samma källa som analysen) ──
     fakta = [f"Bolag: {bolag}"]
     if bransch:
         fakta.append(f"Bransch: {bransch}")
@@ -366,37 +387,27 @@ def generate_email(
         fakta.append(f"Omsättning: {omsattning_msek} MSEK")
     if varulager_msek is not None:
         fakta.append(f"Varulager: {varulager_msek} MSEK")
-        try:
-            hold_cost = round(float(varulager_msek) * 0.20, 1)
-            fakta.append(f"Lagerhållningskostnad/år på HELA lagret (~20%): {hold_cost} MSEK "
-                         f"(kontext — attributera INTE denna till bara den döda delen)")
-        except Exception:
-            pass
-        fr = _freeable_range(varulager_msek)
-        if fr:
-            waste_lo = round(fr[0] * 0.20, 1)
-            waste_hi = round(fr[1] * 0.20, 1)
-            fakta.append(
-                f"DRÖMRESULTAT att rama in (ESTIMAT — presentera som spann, ej fastställt): "
-                f"~{fr[0]}–{fr[1]} MSEK frigörbart kapital "
-                f"(erfarenhetsmässigt 15–30 % av lagervärdet sitter i döda/långsamma artiklar)."
-            )
-            fakta.append(
-                f"KOSTNAD AV ATT INTE AGERA (använd denna, korrekt attribuerad): just den "
-                f"döda/långsamma delen kostar ~{waste_lo}–{waste_hi} MSEK/år att lagra "
-                f"(~20% av det frigörbara spannet) — pengar som brinner varje år den står kvar."
-            )
-    if lagerandel is not None:
-        fakta.append(f"Lagerandel (varulager/oms): {lagerandel}%")
-    if dos is not None:
-        fakta.append(f"Days of Stock (DOS): ~{dos} dagar")
-        # Branschnormer för kontextualisering
-        if bransch:
-            bl = bransch.lower()
-            if any(k in bl for k in ["tillverk", "manufactur", "industri"]):
-                fakta.append("Branschnorm DOS tillverkning: 60–90 dagar")
-            elif any(k in bl for k in ["grossist", "wholesale", "handel"]):
-                fakta.append("Branschnorm DOS grossist: 30–45 dagar")
+    if kpi.get("dos_dagar"):
+        fakta.append(f"Days of Stock: ~{kpi['dos_dagar']} dagar "
+                     f"({kpi.get('lageroms_hastighet','?')} lagervarv/år) mot branschnorm "
+                     f"{kpi['dos_norm_lag']}–{kpi['dos_norm_hog']} dagar ({kpi['dos_norm_bransch']})")
+    if kpi.get("overlager_msek"):
+        fakta.append(f"Överlager mot norm: ~{kpi['overlager_dagar']} dagar ≈ "
+                     f"{kpi['overlager_msek']} MSEK bundet över en sund nivå")
+    if kpi.get("arlig_lagerkostnad_msek"):
+        s = f"Årlig lagerhållningskostnad (~20% av varulagret): {kpi['arlig_lagerkostnad_msek']} MSEK"
+        if kpi.get("lagerkostnad_andel_av_vinst_pct"):
+            s += f" (~{kpi['lagerkostnad_andel_av_vinst_pct']}% av rörelseresultatet)"
+        fakta.append(s)
+    if kpi.get("frigorbart_lag_msek"):
+        s = (f"DRÖMRESULTAT (ESTIMAT — presentera ALLTID som spann): ~{kpi['frigorbart_lag_msek']}–"
+             f"{kpi['frigorbart_hog_msek']} MSEK frigörbart kapital "
+             f"(15–25% av lagervärdet sitter erfarenhetsmässigt i döda/långsamma artiklar)")
+        if kpi.get("frigorbart_manader_vinst"):
+            s += f" — motsvarar ~{kpi['frigorbart_manader_vinst']} månaders vinst"
+        fakta.append(s)
+    if kpi.get("lagerandel_pct"):
+        fakta.append(f"Lagerandel (varulager/oms): {kpi['lagerandel_pct']}%")
 
     # ── Mottagare ─────────────────────────────────────────────────────────────
     fornamn = _first_name(namn)
@@ -418,14 +429,17 @@ def generate_email(
         nyhets_block = "\n(Inga bolagsspecifika nyheter hittades — använd siffrorna som trigger.)\n"
 
     # ── Företagsunika krokar + profil ─────────────────────────────────────────
-    if trends:
+    if insights:
         krok_block = (
-            "\nFÖRETAGSUNIKA KROKAR ur deras årsredovisningar (Bolagsverket, flera år) "
-            "— ÖPPNA mejlet med 1–2 av dessa, ordagrant och verifierbart. Detta är det "
-            "viktigaste i hela mejlet:\n"
-            + "\n".join(f"  - {t}" for t in trends) + "\n")
+            "\nFÖRETAGSUNIKA KROKAR (förberäknade ur deras egna bokslut, RANGORDNADE — "
+            "starkast först). ÖPPNA mejlet med 1–2 av dessa, ordagrant och verifierbart. "
+            "Detta är det viktigaste i hela mejlet:\n"
+            + "\n".join(f"  - {t}" for t in insights) + "\n")
+        if headline:
+            krok_block += (f"\nHEADLINE-VINKEL (får omformuleras, men behåll siffrorna): "
+                           f"{headline}\n")
     else:
-        krok_block = ("\n(Ingen flerårstrend tillgänglig — öppna med senaste årets "
+        krok_block = ("\n(Inga förberäknade krokar tillgängliga — öppna med senaste årets "
                       "lagerandel/DOS som företagsspecifik krok.)\n")
     profil_block = ""
     if foretagsinfo:

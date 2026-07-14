@@ -203,16 +203,42 @@ def render_email_composer(uid: str, to_default: str, draft_kwargs: dict,
 
 
 def render_company_analysis(a: dict) -> None:
-    """Rendera en IHA-föranalys (från company_analyzer.analyze_company) snyggt."""
-    tal = a.get("tal") or {}
-    if tal:
+    """Rendera en djup IHA-föranalys (från company_analyzer.analyze_company) snyggt."""
+    kpi = a.get("kpi") or a.get("tal") or {}
+
+    # Headline-siffra först — det som får bolaget att haja till.
+    if a.get("headline"):
+        st.success(f"🎯 {a['headline']}")
+
+    # Nyckeltalskort (bara de som finns).
+    if kpi:
         m1, m2, m3 = st.columns(3)
-        m1.metric("Kapital i lager", f"{tal['varulager_msek']} MSEK")
-        m2.metric("Årlig lagerkostnad (~20%)", f"{tal['arlig_lagerkostnad_msek']} MSEK")
-        m3.metric("Frigörbart (uppskattat)",
-                  f"{tal['frigorbart_lag_msek']}–{tal['frigorbart_hog_msek']} MSEK")
+        if kpi.get("varulager_msek") is not None:
+            m1.metric("Kapital i lager", f"{kpi['varulager_msek']} MSEK")
+        if kpi.get("dos_dagar"):
+            norm = f"{kpi.get('dos_norm_lag')}–{kpi.get('dos_norm_hog')}"
+            m2.metric("Days of Stock", f"~{kpi['dos_dagar']} d",
+                      delta=f"norm {norm} d ({kpi.get('dos_norm_bransch','')})",
+                      delta_color="off")
+        if kpi.get("frigorbart_lag_msek"):
+            m3.metric("Frigörbart (est.)",
+                      f"{kpi['frigorbart_lag_msek']}–{kpi['frigorbart_hog_msek']} MSEK")
+        n1, n2, n3 = st.columns(3)
+        if kpi.get("lageroms_hastighet"):
+            n1.metric("Lagervarv/år", kpi["lageroms_hastighet"])
+        if kpi.get("overlager_msek"):
+            n2.metric("Överlager mot norm", f"{kpi['overlager_msek']} MSEK",
+                      delta=f"~{kpi.get('overlager_dagar')} dagar", delta_color="off")
+        if kpi.get("arlig_lagerkostnad_msek"):
+            _extra = (f"~{kpi['lagerkostnad_andel_av_vinst_pct']}% av vinsten"
+                      if kpi.get("lagerkostnad_andel_av_vinst_pct") else None)
+            n3.metric("Årlig lagerkostnad", f"{kpi['arlig_lagerkostnad_msek']} MSEK",
+                      delta=_extra, delta_color="off")
+
     if a.get("sammanfattning"):
         st.markdown(f"**Sammanfattning.** {a['sammanfattning']}")
+    if a.get("diagnos"):
+        st.markdown(f"**Diagnos (hypotes).** {a['diagnos']}")
     if a.get("varfor_passar"):
         st.markdown("**Varför bolaget passar IHA:**")
         for p in a["varfor_passar"]:
@@ -227,6 +253,10 @@ def render_company_analysis(a: dict) -> None:
         st.markdown("**Att vara medveten om:**")
         for r in a["riskflaggor"]:
             st.caption(f"⚠️ {r}")
+    if a.get("caveats"):
+        with st.expander("🔎 Så håller vi analysen trovärdig (förbehåll)"):
+            for c in a["caveats"]:
+                st.caption(f"• {c}")
 
 
 # ── Litet felhanterings-skal (ersätter upprepade try/except → st.error) ──────

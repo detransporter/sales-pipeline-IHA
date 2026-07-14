@@ -494,7 +494,8 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                                 resultat_msek=l.get("resultat"),
                                 anstallda=l.get("anstallda"),
                                 lagerandel=l.get("lagerandel"),
-                                vinstmarginal=l.get("vinstmarginal"))
+                                vinstmarginal=l.get("vinstmarginal"),
+                                orgnr=l.get("orgnr", ""))
                             st.rerun()
                         except Exception as e:
                             st.error(f"Kunde inte analysera: {e}")
