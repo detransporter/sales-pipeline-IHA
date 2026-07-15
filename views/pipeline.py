@@ -195,7 +195,7 @@ def render():
 
     def _deal_row(d: dict, i: int):
         with st.container(border=True):
-            c_info, c_stage, c_edit = st.columns([4, 2, 1])
+            c_info, c_stage, c_edit, c_del = st.columns([4, 2, 1, 1])
             with c_info:
                 badge = STAGE_BADGE.get(d.get("stage", ""), "")
                 val = int(d.get("contract_value") or 0)
@@ -226,6 +226,26 @@ def render():
                     st.session_state["deal_form_key"] = \
                         st.session_state.get("deal_form_key", 0) + 1
                     st.rerun()
+            with c_del:
+                # Radera med bekräftelse så inget deal försvinner av misstag.
+                ck = f"del_deal_confirm_{d['id']}_{i}"
+                if not st.session_state.get(ck):
+                    if st.button("🗑️", key=f"del_{d['id']}_{i}", help="Radera deal"):
+                        st.session_state[ck] = True
+                        st.rerun()
+                else:
+                    if st.button("✅", key=f"del_yes_{d['id']}_{i}",
+                                 help="Bekräfta radering"):
+                        try:
+                            db.delete_pipeline_deal(d["id"])
+                            st.session_state.pop(ck, None)
+                            st.success("Deal raderat.")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Fel: {e}")
+                    if st.button("↩︎", key=f"del_no_{d['id']}_{i}", help="Ångra"):
+                        st.session_state.pop(ck, None)
+                        st.rerun()
 
     order = {s: i for i, s in enumerate(db.DEAL_STAGES)}
     for i, d in enumerate(sorted(active_deals,

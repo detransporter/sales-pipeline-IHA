@@ -684,6 +684,13 @@ def update_pipeline_deal(deal_id: int, updates: dict) -> dict:
     return result.data[0] if result.data else {}
 
 
+def delete_pipeline_deal(deal_id: int) -> bool:
+    """Ta bort ett deal permanent ur pipelinen."""
+    client = get_client()
+    client.table("pipeline").delete().eq("id", deal_id).execute()
+    return True
+
+
 def deal_exists_for_prospect(prospect_id: str) -> bool:
     """True om kontakten redan har ett deal (så mote_bokat inte skapar dubbletter)."""
     if not prospect_id:
