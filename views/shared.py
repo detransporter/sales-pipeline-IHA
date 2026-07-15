@@ -45,6 +45,37 @@ ROLL_LABEL = {"vd": "VD/Ägare", "cfo": "CFO/Ekonomichef",
 CONF_LABEL = {"high": "✅ Hög", "medium": "🟡 Medium", "low": "🔴 Låg — granska!"}
 
 
+# ── Cachade läsningar ────────────────────────────────────────────────────────
+# Streamlit kör om hela skriptet vid varje klick/sidbyte. Utan cache hämtas allt
+# från molndatabasen på nytt varje gång → seg känsla. Vi cachar de återkommande
+# läsningarna en kort stund och tömmer cachen direkt efter en skrivning, så du
+# aldrig ser inaktuell data efter en åtgärd.
+
+_CACHE_TTL = 45  # sekunder
+
+
+@st.cache_data(ttl=_CACHE_TTL, show_spinner=False)
+def cached_prospects(status=None, min_score: int = 0):
+    return db.get_prospects(status=status, min_score=min_score)
+
+
+@st.cache_data(ttl=_CACHE_TTL, show_spinner=False)
+def cached_pipeline_stats():
+    return db.get_pipeline_stats()
+
+
+@st.cache_data(ttl=_CACHE_TTL, show_spinner=False)
+def cached_sent_emails(limit: int = 100):
+    return db.get_sent_emails(limit=limit)
+
+
+def clear_data_cache() -> None:
+    """Töm cachade läsningar — anropas efter varje skrivning så vyn blir färsk."""
+    cached_prospects.clear()
+    cached_pipeline_stats.clear()
+    cached_sent_emails.clear()
+
+
 # ── Navigering ───────────────────────────────────────────────────────────────
 
 def goto(target: str) -> None:

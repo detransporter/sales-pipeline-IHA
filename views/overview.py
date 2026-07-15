@@ -9,7 +9,9 @@ from agents import learning
 from agents.followup import postpone_followup
 from agents.qualifier import qualify_reply
 from database import supabase_client as db
-from views.shared import PIPELINE_STATUSES, KONTAKT_KATEGORIER, kategori_label
+from views.shared import (PIPELINE_STATUSES, KONTAKT_KATEGORIER, kategori_label,
+                          cached_prospects, cached_pipeline_stats, cached_sent_emails,
+                          clear_data_cache)
 
 # Vilket uppföljningssteg en kontakt är på väg mot, givet nuvarande status.
 # Styr tröskeln när kontakten dyker upp igen efter en uppskjutning.
@@ -24,7 +26,7 @@ def render():
     st.title("📊 Översikt")
 
     try:
-        stats = db.get_pipeline_stats()
+        stats = cached_pipeline_stats()
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Totalt kontaktade", stats["kontaktade"])
         c2.metric("Fått svar", stats["svar"])
@@ -61,7 +63,7 @@ def render():
 
     try:
         status_param = None if status_filter == "Alla" else status_filter
-        prospects = db.get_prospects(status=status_param, min_score=min_score)
+        prospects = cached_prospects(status=status_param, min_score=min_score)
         if kat_filter != "Alla":
             prospects = [p for p in prospects if (p.get("kategori") or "") == kat_filter]
     except Exception as e:
@@ -119,6 +121,7 @@ def render():
                             "kategori": e_kategori,
                         }
                         db.update_prospect(chosen["id"], {k: v for k, v in fields.items() if v})
+                        clear_data_cache()
                         st.success("Sparat!")
                         st.rerun()
                     except Exception as e:
@@ -137,6 +140,7 @@ def render():
             if st.button("💾 Uppdatera status", type="primary", key="update_status"):
                 try:
                     db.update_prospect_status(chosen["id"], new_status)
+                    clear_data_cache()
                     if svar_text.strip():
                         analysis = qualify_reply(svar_text)
                         st.info(
@@ -179,6 +183,7 @@ def render():
                 if target:
                     try:
                         postpone_followup(chosen["id"], action, target)
+                        clear_data_cache()
                         st.success(f"✅ Uppskjuten — {chosen.get('bolag','kontakten')} "
                                    f"dyker upp igen {target.isoformat()}.")
                         st.rerun()
@@ -193,57 +198,71 @@ def render():
                          disabled=not confirm):
                 try:
                     db.delete_prospect(chosen["id"])
+                    clear_data_cache()
                     st.success("Kontakten är borttagen.")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Fel: {e}")
 
     st.divider()
+    st.caption("Tunga rutor laddas först när du öppnar dem — håller sidbytet snabbt.")
+
+    # Latladdade rutor: DB-anropet körs först när du trycker Ladda (annars skulle
+    # de köras vid varje omladdning även hopfällda och göra sidan seg).
     with st.expander("📈 Vad funkar? (inlärning från historiken)"):
-        try:
-            insight = learning.analyze_what_works()
-            st.write(insight["brief"])
-            if insight["angle_stats"]:
-                st.caption("Per vinkel:")
-                st.dataframe(pd.DataFrame([
-                    {"vinkel": k, **v} for k, v in insight["angle_stats"].items()
-                ]), use_container_width=True, hide_index=True)
-        except Exception as e:
-            st.caption(f"Ingen inlärningsdata ännu: {e}")
+        if st.button("Ladda", key="load_learning"):
+            st.session_state["ov_show_learning"] = True
+        if st.session_state.get("ov_show_learning"):
+            try:
+                insight = learning.analyze_what_works()
+                st.write(insight["brief"])
+                if insight["angle_stats"]:
+                    st.caption("Per vinkel:")
+                    st.dataframe(pd.DataFrame([
+                        {"vinkel": k, **v} for k, v in insight["angle_stats"].items()
+                    ]), use_container_width=True, hide_index=True)
+            except Exception as e:
+                st.caption(f"Ingen inlärningsdata ännu: {e}")
 
     with st.expander("📧 Skickade mejl (logg)"):
-        try:
-            sent = db.get_sent_emails(limit=100)
-            if sent:
-                rows = []
-                for m in sent:
-                    pr = m.get("prospects") or {}
-                    msg = m.get("meddelande", "") or ""
-                    amne = ""
-                    for line in msg.splitlines():
-                        if line.lower().startswith("ämne:"):
-                            amne = line.split(":", 1)[1].strip()
-                            break
-                    rows.append({
-                        "Skickat": (m.get("skickad_at") or "")[:16].replace("T", " "),
-                        "Kontakt": pr.get("namn", ""),
-                        "Bolag": pr.get("bolag", ""),
-                        "Ämne": amne,
-                    })
-                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-            else:
-                st.caption("Inga mejl skickade ännu.")
-        except Exception as e:
-            st.caption(f"Kunde inte läsa mejlloggen: {e}")
+        if st.button("Ladda", key="load_sent"):
+            st.session_state["ov_show_sent"] = True
+        if st.session_state.get("ov_show_sent"):
+            try:
+                sent = cached_sent_emails(limit=100)
+                if sent:
+                    rows = []
+                    for m in sent:
+                        pr = m.get("prospects") or {}
+                        msg = m.get("meddelande", "") or ""
+                        amne = ""
+                        for line in msg.splitlines():
+                            if line.lower().startswith("ämne:"):
+                                amne = line.split(":", 1)[1].strip()
+                                break
+                        rows.append({
+                            "Skickat": (m.get("skickad_at") or "")[:16].replace("T", " "),
+                            "Kontakt": pr.get("namn", ""),
+                            "Bolag": pr.get("bolag", ""),
+                            "Ämne": amne,
+                        })
+                    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                else:
+                    st.caption("Inga mejl skickade ännu.")
+            except Exception as e:
+                st.caption(f"Kunde inte läsa mejlloggen: {e}")
 
     with st.expander("🧠 Minne (senaste noteringar)"):
-        try:
-            notes = db.list_memory(limit=10)
-            if notes:
-                for n in notes:
-                    st.markdown(f"**{(n.get('created_at') or '')[:10]}**")
-                    st.caption(n.get("content", ""))
-            else:
-                st.caption("Minnet är tomt ännu.")
-        except Exception as e:
-            st.caption(f"Kunde inte läsa minnet: {e}")
+        if st.button("Ladda", key="load_memory"):
+            st.session_state["ov_show_memory"] = True
+        if st.session_state.get("ov_show_memory"):
+            try:
+                notes = db.list_memory(limit=10)
+                if notes:
+                    for n in notes:
+                        st.markdown(f"**{(n.get('created_at') or '')[:10]}**")
+                        st.caption(n.get("content", ""))
+                else:
+                    st.caption("Minnet är tomt ännu.")
+            except Exception as e:
+                st.caption(f"Kunde inte läsa minnet: {e}")

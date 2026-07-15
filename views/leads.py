@@ -10,7 +10,8 @@ from integrations import email_sender
 from agents import company_analyzer
 from database import supabase_client as db
 from views.shared import (goto, person_link_inline, render_company_analysis,
-                          render_email_composer, log_sent_email, kategori_label)
+                          render_email_composer, log_sent_email, kategori_label,
+                          cached_sent_emails, clear_data_cache)
 
 # Open Brain-minnet (tålig import — kortet funkar även utan det).
 try:
@@ -82,7 +83,7 @@ def render():
     analysis_cache = st.session_state.setdefault("lead_analysis", {})
     # Mejlstatus: bolagsnamn (lower) → datum för senast skickat mejl
     try:
-        _sent = db.get_sent_emails(limit=200)
+        _sent = cached_sent_emails(limit=200)
         _emailed_bolag: dict[str, str] = {
             (m.get("prospects") or {}).get("bolag", "").lower(): (m.get("skickad_at") or "")[:10]
             for m in _sent
@@ -333,6 +334,7 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                                  type="primary", use_container_width=True):
                 try:
                     db.promote_lead(l)
+                    clear_data_cache()
                     st.success("Tillagd i pipeline!")
                     st.rerun()
                 except Exception as e:
@@ -556,6 +558,7 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                                     db.update_prospect_status(pid, "skickad")
                             except Exception:
                                 pass
+                            clear_data_cache()
                             st.success(f"✅ Mejl skickat till {to} — kontakten är nu i "
                                        f"pipeline (kontaktad).")
                             st.rerun()
