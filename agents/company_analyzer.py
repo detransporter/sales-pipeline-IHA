@@ -24,6 +24,38 @@ from agents import iha_metrics
 load_dotenv()
 
 MODEL = "claude-sonnet-5"
+CLASSIFY_MODEL = "claude-haiku-4-5"   # billig klassning av affärsmodell
+
+
+def classify_business_model(bolag: str, bransch: str = "", website_text: str = "") -> str:
+    """
+    Klassa bolagets affärsmodell utifrån hemsidan → 'tillverkning' | 'grossist' |
+    'handel' | 'bygg'. Styr vilken DOS-branschnorm analysen jämför mot (mycket mer
+    pålitligt än att gissa på den tvetydiga SNI-etiketten). '' om osäkert/ingen AI.
+    """
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key or not (website_text or "").strip():
+        return ""
+    prompt = (
+        f"Bolag: {bolag}\nBranschetikett: {bransch or '(okänd)'}\n\n"
+        f"TEXT FRÅN HEMSIDAN:\n{website_text[:1500]}\n\n"
+        "Klassa bolagets HUVUDSAKLIGA affärsmodell som EXAKT ett av dessa ord:\n"
+        "- tillverkning (tillverkar/producerar egna varor)\n"
+        "- grossist (distribuerar/säljer andras varor i parti, reservdelar, förnödenheter)\n"
+        "- handel (detaljhandel/e-handel mot slutkund)\n"
+        "- bygg (bygg/installation/entreprenad)\n"
+        "Svara med BARA ordet, inget annat."
+    )
+    try:
+        client = anthropic.Anthropic(api_key=api_key)
+        resp = client.messages.create(
+            model=CLASSIFY_MODEL, max_tokens=12,
+            messages=[{"role": "user", "content": prompt}])
+        word = "".join(b.text for b in resp.content if b.type == "text").strip().lower()
+        word = word.split()[0].strip(".,:;") if word else ""
+        return word if word in iha_metrics.BUSINESS_MODELS else ""
+    except Exception:
+        return ""
 
 # Standardantaganden (Davids IHA-ramverk). Justerbara om vi vill senare.
 CARRYING_COST_PCT = 0.20          # årlig lagerhållningskostnad ~20% av varulagervärdet
@@ -101,16 +133,18 @@ def compute_potential(varulager_msek) -> dict:
 def analyze_company(bolag: str, bransch: str = "", website: str = "",
                     omsattning_msek=None, varulager_msek=None, resultat_msek=None,
                     anstallda=None, lagerandel=None, vinstmarginal=None,
-                    orgnr: str = "", bruttomarginal=None, history=None) -> dict:
+                    orgnr: str = "", bruttomarginal=None, history=None,
+                    affarsmodell: str = "") -> dict:
     """
     Gör en DJUP IHA-föranalys av ett bolag. Returnerar:
       {
         "tal": {...KPI:er...}, "kpi": {...}, "headline": str, "insights": [..],
-        "caveats": [..], "sammanfattning": str, "diagnos": str,
+        "caveats": [..], "affarsmodell": str, "sammanfattning": str, "diagnos": str,
         "varfor_passar": [..], "potential": str, "samtalskrokar": [..], "riskflaggor": [..]
       }
     Hämtar flerårshistorik + bruttomarginal via orgnr (gratis) om de inte skickas in.
-    Saknas ANTHROPIC-nyckel eller går något fel returneras KPI:erna + en enkel text.
+    Klassar affärsmodellen från hemsidan (om inte `affarsmodell` skickas in) → rätt
+    DOS-branschnorm. Saknas ANTHROPIC-nyckel returneras KPI:erna + en enkel text.
     """
     # Berika ur bokslutet: historik + bruttomarginal + backfill av aktuella tal.
     if orgnr and (history is None or bruttomarginal is None):
@@ -131,18 +165,7 @@ def analyze_company(bolag: str, bransch: str = "", website: str = "",
         except Exception:
             pass
 
-    # Deterministisk KPI-motor — alla tal, inga gissningar.
-    metrics = iha_metrics.compute(
-        bolag=bolag, bransch=bransch, omsattning_msek=omsattning_msek,
-        varulager_msek=varulager_msek, resultat_msek=resultat_msek,
-        bruttomarginal=bruttomarginal, anstallda=anstallda, lagerandel=lagerandel,
-        history=history)
-    kpi = metrics["kpi"]
-    tal = compute_potential(varulager_msek) or {k: kpi[k] for k in (
-        "varulager_msek", "arlig_lagerkostnad_msek",
-        "frigorbart_lag_msek", "frigorbart_hog_msek") if k in kpi}
-
-    # Hemsidetext (gratis, publik) — gör analysen konkret om den finns.
+    # Hemsidetext (gratis, publik) — gör analysen konkret + underlag för klassning.
     website_text = ""
     if website:
         try:
@@ -150,9 +173,25 @@ def analyze_company(bolag: str, bransch: str = "", website: str = "",
         except Exception:
             website_text = ""
 
+    # Affärsmodell → rätt DOS-norm. Överstyrd av anropare, annars klassad (billigt).
+    if not affarsmodell:
+        affarsmodell = classify_business_model(bolag, bransch, website_text)
+
+    # Deterministisk KPI-motor — alla tal, inga gissningar.
+    metrics = iha_metrics.compute(
+        bolag=bolag, bransch=bransch, omsattning_msek=omsattning_msek,
+        varulager_msek=varulager_msek, resultat_msek=resultat_msek,
+        bruttomarginal=bruttomarginal, anstallda=anstallda, lagerandel=lagerandel,
+        history=history, affarsmodell=affarsmodell)
+    kpi = metrics["kpi"]
+    tal = compute_potential(varulager_msek) or {k: kpi[k] for k in (
+        "varulager_msek", "arlig_lagerkostnad_msek",
+        "frigorbart_lag_msek", "frigorbart_hog_msek") if k in kpi}
+
     def _base(extra):
         return {"tal": tal, "kpi": kpi, "headline": metrics["headline"],
                 "insights": metrics["insights"], "caveats": metrics["caveats"],
+                "affarsmodell": kpi.get("affarsmodell", ""),
                 "sammanfattning": "", "diagnos": "", "varfor_passar": [],
                 "potential": "", "samtalskrokar": [], "riskflaggor": [], **extra}
 

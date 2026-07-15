@@ -33,6 +33,24 @@ _DOS_NORMS = [
 ]
 _DOS_NORM_DEFAULT = (45, 75)
 
+# Affärsmodell → DOS-norm. Styr benchmark när modellen är känd (klassad från
+# hemsidan) i stället för att gissa på den tvetydiga bransch-etiketten.
+_MODEL_NORMS = {
+    "tillverkning": ((60, 90), "tillverkning"),
+    "grossist": ((30, 45), "grossist/distribution"),
+    "handel": ((30, 60), "handel"),
+    "bygg": ((45, 75), "bygg/installation"),
+}
+BUSINESS_MODELS = ("tillverkning", "grossist", "handel", "bygg")
+
+
+def norm_for(affarsmodell: str = "", bransch: str = "") -> tuple[tuple[int, int], str]:
+    """Rätt DOS-norm: affärsmodell först (om känd), annars gissa på branschtext."""
+    m = (affarsmodell or "").strip().lower()
+    if m in _MODEL_NORMS:
+        return _MODEL_NORMS[m]
+    return _dos_norm(bransch)
+
 
 def _f(x):
     """Tolerant float-konvertering → float eller None."""
@@ -77,6 +95,7 @@ def compute(
     anstallda=None,
     lagerandel=None,
     history=None,
+    affarsmodell: str = "",
 ) -> dict:
     """
     Returnerar en dict med:
@@ -130,8 +149,11 @@ def compute(
             kpi["frigorbart_manader_vinst"] = round(kpi["frigorbart_lag_msek"] / (res / 12), 1)
 
     # ── Branschbenchmark: överlager i dagar → kronor ────────────────────────
-    (norm_lo, norm_hi), norm_label = _dos_norm(bransch)
+    (norm_lo, norm_hi), norm_label = norm_for(affarsmodell, bransch)
     kpi["dos_norm_lag"], kpi["dos_norm_hog"], kpi["dos_norm_bransch"] = norm_lo, norm_hi, norm_label
+    kpi["affarsmodell"] = (affarsmodell or "").strip().lower() if \
+        (affarsmodell or "").strip().lower() in _MODEL_NORMS else ""
+    kpi["affarsmodell_kalla"] = "klassad" if kpi["affarsmodell"] else "gissad (branschord)"
     dos = kpi.get("dos_dagar")
     if dos and dos > norm_hi:
         excess_days = dos - norm_hi

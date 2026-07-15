@@ -361,18 +361,28 @@ def generate_email(
         except Exception:
             pass
 
+    # Hemsidetext först — används både för klassning och som företagsprofil.
+    if not foretagsinfo and website:
+        foretagsinfo = _company_profile(website)
+
+    # Affärsmodell → rätt DOS-branschnorm (samma klassare som IHA-analysen).
+    affarsmodell = ""
+    try:
+        from agents.company_analyzer import classify_business_model
+        affarsmodell = classify_business_model(bolag, bransch, foretagsinfo)
+    except Exception:
+        affarsmodell = ""
+
     # Deterministisk KPI-motor → exakt samma siffror som IHA-analysen.
     from agents import iha_metrics
     metrics = iha_metrics.compute(
         bolag=bolag, bransch=bransch, omsattning_msek=omsattning_msek,
         varulager_msek=varulager_msek, resultat_msek=resultat_msek,
-        bruttomarginal=bruttomarginal, lagerandel=lagerandel, history=history)
+        bruttomarginal=bruttomarginal, lagerandel=lagerandel, history=history,
+        affarsmodell=affarsmodell)
     kpi = metrics.get("kpi", {})
     insights = metrics.get("insights", [])
     headline = metrics.get("headline", "")
-
-    if not foretagsinfo and website:
-        foretagsinfo = _company_profile(website)
 
     confidence, review_flag = _confidence(titel, lagerandel, varulager_msek, nyheter)
     # Förberäknade, verifierbara krokar → hög confidence.

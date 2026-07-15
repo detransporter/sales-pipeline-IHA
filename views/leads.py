@@ -483,8 +483,8 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
             # ── Flik: IHA-föranalys (siffror + hemsida) innan kontakt ──
             with tab_analys:
                 cached_a = analysis_cache.get(lid)
-                if st.button("🔬 Gör analys" if not cached_a else "🔄 Gör om analys",
-                             key=f"analyze_{lid}"):
+
+                def _run(model_override=""):
                     with st.spinner("Analyserar bolagets lagerläge (siffror + hemsida)..."):
                         try:
                             analysis_cache[lid] = company_analyzer.analyze_company(
@@ -495,12 +495,27 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                                 anstallda=l.get("anstallda"),
                                 lagerandel=l.get("lagerandel"),
                                 vinstmarginal=l.get("vinstmarginal"),
-                                orgnr=l.get("orgnr", ""))
+                                orgnr=l.get("orgnr", ""), affarsmodell=model_override)
                             st.rerun()
                         except Exception as e:
                             st.error(f"Kunde inte analysera: {e}")
+
+                if st.button("🔬 Gör analys" if not cached_a else "🔄 Gör om analys",
+                             key=f"analyze_{lid}"):
+                    _run()
                 if cached_a:
                     render_company_analysis(cached_a)
+                    # Överstyr affärsmodellen om klassningen blev fel (du är experten).
+                    _MODELS = ["tillverkning", "grossist", "handel", "bygg"]
+                    _cur = cached_a.get("affarsmodell", "")
+                    with st.expander("📐 Justera affärsmodell (styr benchmark)"):
+                        oc1, oc2 = st.columns([2, 1])
+                        pick = oc1.selectbox(
+                            "Affärsmodell", _MODELS,
+                            index=_MODELS.index(_cur) if _cur in _MODELS else 0,
+                            key=f"model_{lid}")
+                        if oc2.button("Räkna om", key=f"remodel_{lid}"):
+                            _run(model_override=pick)
                 else:
                     st.caption("Tryck **Gör analys** — väver ihop bolagets bokslutssiffror "
                                "med deras hemsida till en säljbar bild (drar ett API-anrop).")

@@ -234,6 +234,12 @@ def render_company_analysis(a: dict) -> None:
                       if kpi.get("lagerkostnad_andel_av_vinst_pct") else None)
             n3.metric("Årlig lagerkostnad", f"{kpi['arlig_lagerkostnad_msek']} MSEK",
                       delta=_extra, delta_color="off")
+        # Vilken affärsmodell benchmarken vilar på (klassad vs gissad).
+        if kpi.get("dos_dagar"):
+            _kalla = kpi.get("affarsmodell_kalla", "")
+            _mod = kpi.get("affarsmodell") or kpi.get("dos_norm_bransch", "")
+            st.caption(f"📐 Benchmark: **{_mod}** ({_kalla}) — "
+                       f"norm {kpi.get('dos_norm_lag')}–{kpi.get('dos_norm_hog')} dagar.")
 
     if a.get("sammanfattning"):
         st.markdown(f"**Sammanfattning.** {a['sammanfattning']}")
