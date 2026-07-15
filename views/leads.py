@@ -531,6 +531,9 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                     st.caption(f"Redan mejlat {_sent_date}. Öppna Översikt om du vill "
                                "kontakta igen.")
                 else:
+                    # Ärv affärsmodellen från en ev. gjord (och korrigerad) analys så
+                    # mejlet använder exakt samma benchmark som du godkänt.
+                    _a = analysis_cache.get(lid) or {}
                     to, subj, body, send = render_email_composer(
                         f"lead_{lid}", all_emails[0],
                         dict(bolag=l.get("bolag", ""), namn=l.get("namn", ""),
@@ -538,6 +541,8 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                              lagerandel=l.get("lagerandel"),
                              varulager_msek=l.get("varulager"),
                              omsattning_msek=l.get("omsattning"),
+                             resultat_msek=l.get("resultat"),
+                             affarsmodell=_a.get("affarsmodell", ""),
                              orgnr=l.get("orgnr", ""), website=website),
                         to_options=all_emails)
                     if send:

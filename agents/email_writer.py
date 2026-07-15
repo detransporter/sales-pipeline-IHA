@@ -328,6 +328,7 @@ def generate_email(
     history=None,
     foretagsinfo: str = "",
     followup_steg: int = 0,
+    affarsmodell: str = "",
 ) -> dict:
     """
     Generera ett rollanpassat, FÖRETAGSUNIKT säljmejl.
@@ -365,13 +366,14 @@ def generate_email(
     if not foretagsinfo and website:
         foretagsinfo = _company_profile(website)
 
-    # Affärsmodell → rätt DOS-branschnorm (samma klassare som IHA-analysen).
-    affarsmodell = ""
-    try:
-        from agents.company_analyzer import classify_business_model
-        affarsmodell = classify_business_model(bolag, bransch, foretagsinfo)
-    except Exception:
-        affarsmodell = ""
+    # Affärsmodell → rätt DOS-branschnorm. Ärvs från en redan gjord IHA-analys
+    # (Davids ev. korrigering) om den skickas in; annars klassas den här (billigt).
+    if not affarsmodell:
+        try:
+            from agents.company_analyzer import classify_business_model
+            affarsmodell = classify_business_model(bolag, bransch, foretagsinfo)
+        except Exception:
+            affarsmodell = ""
 
     # Deterministisk KPI-motor → exakt samma siffror som IHA-analysen.
     from agents import iha_metrics
