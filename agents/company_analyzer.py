@@ -59,16 +59,27 @@ Ingen text utanför JSON."""
 
 
 def _parse_json(raw: str) -> dict:
+    """Tolerant JSON-extraktion — tål att modellen lindar JSON i prosa/tankeblock."""
     raw = (raw or "").strip()
     if "```" in raw:
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
+        parts = raw.split("```")
+        if len(parts) >= 2:
+            raw = parts[1]
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+            raw = raw.strip()
     try:
         return json.loads(raw)
     except Exception:
-        return {}
+        pass
+    # Fallback: plocka ut från första { till sista } (prosa runtom stör inte).
+    try:
+        i, j = raw.find("{"), raw.rfind("}")
+        if i != -1 and j > i:
+            return json.loads(raw[i:j + 1])
+    except Exception:
+        pass
+    return {}
 
 
 def compute_potential(varulager_msek) -> dict:
@@ -208,6 +219,11 @@ def analyze_company(bolag: str, bransch: str = "", website: str = "",
         data = _parse_json(raw)
     except Exception as e:
         return _base({"sammanfattning": f"Kunde inte göra AI-analys: {e}"})
+
+    if not data:
+        # Anropet gick igenom men svaret gick inte att tolka som JSON.
+        return _base({"sammanfattning": "AI-texten kunde inte tolkas den här gången — "
+                      "nyckeltalen och krokarna ovan gäller ändå. Testa 'Gör om analys'."})
 
     return _base({
         "sammanfattning": str(data.get("sammanfattning", "")).strip(),

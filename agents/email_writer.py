@@ -489,16 +489,25 @@ def generate_email(
     # Plocka bara textblocken (modellen kan inleda med ett tankeblock)
     raw = "".join(b.text for b in response.content if b.type == "text").strip()
 
-    # Extrahera JSON
+    # Extrahera JSON — tolerant mot prosa/tankeblock runt själva JSON:en.
     if "```" in raw:
-        raw = raw.split("```")[1]
-        if raw.lower().startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
+        parts = raw.split("```")
+        if len(parts) >= 2:
+            raw = parts[1]
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+            raw = raw.strip()
     try:
         data = json.loads(raw)
     except Exception:
         data = {}
+    if not data:
+        try:
+            i, j = raw.find("{"), raw.rfind("}")
+            if i != -1 and j > i:
+                data = json.loads(raw[i:j + 1])
+        except Exception:
+            data = {}
 
     body = str(data.get("body", "")).strip()
     # Säkerhetsnet: garantera signatur

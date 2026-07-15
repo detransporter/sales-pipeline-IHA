@@ -21,11 +21,15 @@ RELEASE_HIGH_PCT = 0.25       # optimistisk uppskattning
 # Branschnormer för Days of Stock (dagar). Grova men vedertagna spann; används
 # bara för att positionera, alltid som spann. Nyckelord matchas mot bransch-texten.
 _DOS_NORMS = [
-    (("tillverk", "manufactur", "industri", "produktion", "verkstad"), (60, 90),
-     "tillverkning"),
-    (("grossist", "wholesale", "distribu", "import", "parti"), (30, 45), "grossist"),
-    (("detalj", "retail", "butik", "e-handel", "ehandel", "handel"), (30, 60), "handel"),
-    (("bygg", "construction", "installation"), (45, 75), "bygg/installation"),
+    (("tillverk", "manufactur", "industri", "produktion", "verkstad", "fabrik"),
+     (60, 90), "tillverkning"),
+    (("grossist", "wholesale", "distribu", "import", "parti", "förnödenhet",
+      "reservdel", "komponent", "tillbehör", "leverantör av", "handel med",
+      "agentur", "grossisthandel"), (30, 45), "grossist/distribution"),
+    (("detalj", "retail", "butik", "e-handel", "ehandel", "webshop", "handel"),
+     (30, 60), "handel"),
+    (("bygg", "construction", "installation", "vvs", "el-"), (45, 75),
+     "bygg/installation"),
 ]
 _DOS_NORM_DEFAULT = (45, 75)
 
