@@ -42,16 +42,43 @@ st.set_page_config(
 # ── Inloggning ───────────────────────────────────────────────────────────────
 # Aktiveras bara om APP_PASSWORD är satt (dvs online). Lokalt utan lösenord är
 # appen öppen. På Streamlit Cloud skyddar detta appen även om länken är publik.
+#
+# Inloggningen sparas som en biljett i URL:en (?auth=...) — session_state lever
+# bara i serverminnet och nollas vid varje deploy/omstart/avbruten anslutning,
+# vilket förr loggade ut David flera gånger om dagen. Biljetten är en HMAC av
+# lösenordet (inte lösenordet självt) och ligger kvar i flikens URL, så
+# inloggningen överlever allt utom att lösenordet byts. OBS: dela aldrig
+# URL:en med ?auth= i — den släpper in innehavaren utan lösenord.
+import hashlib
+import hmac
+
+
+def _auth_token(pw: str) -> str:
+    return hmac.new(pw.encode(), b"iha-app-login-v1", hashlib.sha256).hexdigest()[:32]
+
+
 def _require_login() -> bool:
     pw = os.environ.get("APP_PASSWORD", "")
-    if not pw or st.session_state.get("_authed"):
+    if not pw:
         return True
+    token = _auth_token(pw)
+
+    # Giltig biljett i URL:en → inloggad (överlever omstarter och deploys).
+    if hmac.compare_digest(st.query_params.get("auth", ""), token):
+        return True
+
+    # Inloggad i denna session men biljetten saknas i URL:en → lägg dit den.
+    if st.session_state.get("_authed"):
+        st.query_params["auth"] = token
+        return True
+
     st.title("🔒 Sales pipeline - IHA")
     st.caption("Logga in för att fortsätta.")
     entered = st.text_input("Lösenord", type="password")
     if entered:
         if entered == pw:
             st.session_state["_authed"] = True
+            st.query_params["auth"] = token
             st.rerun()
         st.error("Fel lösenord.")
     return False
