@@ -204,7 +204,11 @@ def render_email_composer(uid: str, to_default: str, draft_kwargs: dict,
                 st.session_state[f"review_{uid}"] = d.get("review_flag", False)
                 st.session_state[f"draftdone_{uid}"] = True
             except Exception as e:
-                st.error(f"Kunde inte skriva utkast: {e}")
+                if "overloaded" in str(e).lower() or "529" in str(e):
+                    st.error("Anthropics servrar är tillfälligt överbelastade — "
+                             "vänta en minut och klicka på 'Skriv utkast' igen.")
+                else:
+                    st.error(f"Kunde inte skriva utkast: {e}")
 
     if st.session_state.get(f"draftdone_{uid}"):
         # Metainfo om utkastet

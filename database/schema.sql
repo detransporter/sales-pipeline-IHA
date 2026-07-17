@@ -149,3 +149,15 @@ CREATE INDEX IF NOT EXISTS idx_lead_suggestions_status ON lead_suggestions(statu
 CREATE INDEX IF NOT EXISTS idx_agent_memory_created ON agent_memory(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_inbox_replies_handled ON inbox_replies(handled);
 CREATE INDEX IF NOT EXISTS idx_inbox_replies_external ON inbox_replies(external_id);
+
+-- Sparad bolagssökning — söksidans pool + djuplästa bolag som EN rad (id=1),
+-- så att sökningen överlever omstart och djupläsningen kan fortsätta senare.
+CREATE TABLE IF NOT EXISTS screen_sessions (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    pool JSONB NOT NULL DEFAULT '[]',
+    fins JSONB NOT NULL DEFAULT '[]',
+    read_count INTEGER NOT NULL DEFAULT 0,
+    funnel JSONB NOT NULL DEFAULT '{}',
+    label TEXT DEFAULT '',
+    updated_at TIMESTAMP DEFAULT NOW()
+);

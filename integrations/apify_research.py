@@ -23,11 +23,19 @@ håll max_places lågt (10–20 per sökning) så räcker krediterna långt.
 
 import os
 import re
+import json
 import smtplib
 import unicodedata
 import urllib.parse
 import requests
 from dotenv import load_dotenv
+
+# BeautifulSoup ger strukturbevarande parsning (namn/titel/mejl hålls ihop rad
+# för rad, bild-alt-texter följer med). Tålig import — utan bs4 körs regex-strip.
+try:
+    from bs4 import BeautifulSoup
+except Exception:  # pragma: no cover
+    BeautifulSoup = None
 
 load_dotenv()
 
@@ -222,12 +230,127 @@ def _strip_html(html: str, max_chars: int) -> str:
     return text[:max_chars]
 
 
+def _soup_text(html: str, max_chars: int) -> str:
+    """
+    Läsbar text ur HTML med bibehållen struktur: radbrytningar mellan block
+    (så "Anna Andersson" och "Inköpschef" hålls ihop som grannrader i stället
+    för att drunkna i en ordsoppa), bild-alt-texter (teamfoton bär ofta namnet
+    där) och mailto-adresser (står ofta bara i href, inte i länktexten).
+    Fallback till regex-strip om bs4 saknas eller HTML:en är trasig.
+    """
+    if not BeautifulSoup:
+        return _strip_html(html, max_chars)
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        for tag in soup(["script", "style", "noscript", "svg", "iframe"]):
+            tag.decompose()
+        for img in soup.find_all("img"):
+            alt = (img.get("alt") or "").strip()
+            if 3 < len(alt) < 120:
+                img.replace_with(f" [bild: {alt}] ")
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if href.lower().startswith("mailto:"):
+                addr = href[7:].split("?")[0].strip()
+                if addr and addr not in a.get_text():
+                    a.append(f" <{addr}>")
+        lines = [ln.strip() for ln in soup.get_text(separator="\n").splitlines()]
+        return "\n".join(ln for ln in lines if ln)[:max_chars]
+    except Exception:
+        return _strip_html(html, max_chars)
+
+
+def _jsonld_people(html: str) -> list[dict]:
+    """
+    Läs schema.org-strukturdata (JSON-LD) ur sidan — där ligger ibland namn +
+    roll färdigt maskinläsbart (@type Person, ofta under employee/founder).
+    Returnerar [{namn, titel, email}], tom lista om inget finns.
+    """
+    if not BeautifulSoup or not html:
+        return []
+    people: list[dict] = []
+
+    def _walk(node):
+        if isinstance(node, dict):
+            if "person" in str(node.get("@type", "")).lower():
+                namn = str(node.get("name", "")).strip()
+                if namn:
+                    people.append({
+                        "namn": namn,
+                        "titel": str(node.get("jobTitle", "")).strip(),
+                        "email": str(node.get("email", "")).replace("mailto:", "").strip(),
+                    })
+            for v in node.values():
+                _walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                _walk(v)
+
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        for tag in soup.find_all("script", type="application/ld+json"):
+            try:
+                _walk(json.loads(tag.string or ""))
+            except Exception:
+                continue
+    except Exception:
+        return []
+    seen: set[str] = set()
+    out = []
+    for p in people:
+        k = p["namn"].lower()
+        if k not in seen:
+            seen.add(k)
+            out.append(p)
+    return out[:15]
+
+
+def _sitemap_team_urls(base_url: str, max_urls: int = 5) -> list[str]:
+    """
+    Hitta team-/kontaktsidor via sitemap.xml — fångar sidor som göms bakom
+    JS-menyer där länkjakten i HTML aldrig ser dem.
+    """
+    base = _normalize_url(base_url).rstrip("/")
+    xml = _get_html(f"{base}/sitemap.xml")
+    if not xml:
+        return []
+    locs = re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", xml)
+    # Sitemap-index pekar på under-sitemaps — följ några av dem.
+    for sub in [u for u in locs if u.lower().endswith(".xml")][:3]:
+        sub_xml = _get_html(sub)
+        if sub_xml:
+            locs += re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", sub_xml)
+    # Starka ledtrådar (pekar nästan alltid på personer) prioriteras före svaga
+    # som "about"/"om" (matchar även nyhetssidor under /about-.../news/).
+    strong = ("kontakt", "contact", "team", "ledning", "medarbetare", "personal",
+              "management", "styrelse", "people", "staff", "leadership")
+    noise = ("/news", "/nyheter", "/blog", "/blogg", "/press", "/event", "/karriar", "/career")
+    strong_hits: list[str] = []
+    weak_hits: list[str] = []
+    for u in locs:
+        low = u.lower()
+        # .xml är under-sitemaps, inte sidor — de har redan följts ovan.
+        if low.endswith(".xml") or any(n in low for n in noise):
+            continue
+        if any(h in low for h in strong):
+            strong_hits.append(u)
+        elif any(h in low for h in _TEAM_HINTS):
+            weak_hits.append(u)
+    out: list[str] = []
+    for u in strong_hits + weak_hits:
+        if u not in out:
+            out.append(u)
+        if len(out) >= max_urls:
+            break
+    return out
+
+
 def fetch_website_text(url: str, max_chars: int = 1500) -> str:
     """
     Hämta läsbar text från ett bolags startsida (publik, ingen LinkedIn).
     Används för personlig DM-kontext. Tom sträng vid fel.
     """
-    return _strip_html(_get_html(url), max_chars)
+    return _soup_text(_get_html(url), max_chars)
 
 
 def _team_page_urls(base_url: str, html: str, max_pages: int = 3) -> list[str]:
@@ -265,17 +388,26 @@ def fetch_people_pages(url: str, max_pages: int = 6, max_chars: int = 4000) -> s
     """
     home = _get_html(url)
     if not home:
+        print(f"[scrape] {url}: startsidan gick inte att hämta")
         return ""
-    parts = [_strip_html(home, max_chars)]
+    parts = [_soup_text(home, max_chars)]
     seen: set[str] = set()
 
-    # Länkade team-/kontaktsidor
-    for page in _team_page_urls(url, home, max_pages=max_pages):
+    # Strukturdata (schema.org) — namn + roll färdigt maskinläsbart när det finns.
+    ld_people = _jsonld_people(home)
+
+    # Länkade team-/kontaktsidor + sidor ur sitemap.xml (fångar JS-gömda menyer)
+    pages = _team_page_urls(url, home, max_pages=max_pages)
+    for extra in _sitemap_team_urls(url):
+        if extra not in pages:
+            pages.append(extra)
+    for page in pages[:max_pages]:
         if page not in seen:
             seen.add(page)
             html = _get_html(page)
             if html:
-                parts.append(f"\n[Sida: {page}]\n" + _strip_html(html, max_chars))
+                ld_people += [p for p in _jsonld_people(html) if p not in ld_people]
+                parts.append(f"\n[Sida: {page}]\n" + _soup_text(html, max_chars))
 
     # Prova vanliga sökvägar direkt (dolda bakom JS-meny)
     base = url.rstrip("/")
@@ -285,11 +417,25 @@ def fetch_people_pages(url: str, max_pages: int = 6, max_chars: int = 4000) -> s
             seen.add(cand)
             html = _get_html(cand)
             if html and len(html) > 500:   # ignorera 404-sidor som är nästan tomma
-                parts.append(f"\n[Sida: {cand}]\n" + _strip_html(html, max_chars))
+                ld_people += [p for p in _jsonld_people(html) if p not in ld_people]
+                parts.append(f"\n[Sida: {cand}]\n" + _soup_text(html, max_chars))
         if len(parts) > max_pages + 2:
             break
 
-    return _WS_RE.sub(" ", " ".join(parts)).strip()[: max_chars * 3]
+    # Lägg strukturdata-personerna FÖRST — säkraste källan, Claude ska se den direkt.
+    if ld_people:
+        parts.insert(0, "PERSONER FRÅN STRUKTURDATA (schema.org — pålitlig källa):\n" + "\n".join(
+            f"- {p['namn']}"
+            + (f" — {p['titel']}" if p["titel"] else "")
+            + (f" <{p['email']}>" if p["email"] else "")
+            for p in ld_people
+        ))
+
+    text = "\n".join(parts).strip()[: max_chars * 3]
+    # Mätlogg: tom/kort text = troligen JS-renderad sajt (syns i konsolen).
+    if len(text) < 300:
+        print(f"[scrape] {url}: bara {len(text)} tecken text — troligen JS-renderad sajt")
+    return text
 
 
 # ── E-post + hemsida (publik scraping, ingen LinkedIn) ──────────────────────

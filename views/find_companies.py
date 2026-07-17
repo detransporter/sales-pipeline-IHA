@@ -37,6 +37,37 @@ def _deep_read_candidates(pool_slice):
     return fins
 
 
+# SQL David kan klistra in i Supabase om 'screen_sessions'-tabellen saknas.
+_SCREEN_TABLE_SQL = """CREATE TABLE IF NOT EXISTS sales_chief.screen_sessions (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    pool JSONB NOT NULL DEFAULT '[]',
+    fins JSONB NOT NULL DEFAULT '[]',
+    read_count INTEGER NOT NULL DEFAULT 0,
+    funnel JSONB NOT NULL DEFAULT '{}',
+    label TEXT DEFAULT '',
+    updated_at TIMESTAMP DEFAULT NOW()
+);"""
+
+
+def _persist_screen_session(label: str | None = None) -> None:
+    """Spara pool + djuplästa bolag i databasen så sökningen överlever omstart."""
+    if label is not None:
+        st.session_state["screen_label"] = label
+    try:
+        db.save_screen_session(
+            pool=st.session_state.get("screen_pool", []),
+            fins=st.session_state.get("screen_fins", []),
+            read=st.session_state.get("screen_read", 0),
+            funnel=st.session_state.get("screen_funnel", {}),
+            label=st.session_state.get("screen_label", ""),
+        )
+    except Exception:
+        st.warning("⚠️ Sökningen gick inte att spara för återupptagning — tabellen "
+                   "`screen_sessions` saknas troligen i databasen. Allt annat funkar ändå.")
+        with st.expander("Kör detta i Supabase SQL Editor (en gång)"):
+            st.code(_SCREEN_TABLE_SQL, language="sql")
+
+
 def _rescreen(oms_min, oms_max, max_anstallda, min_lagerandel, max_marginal, hard_margin):
     """Kör om kvalificeringen på redan djuplästa bolag — ingen ny nätverkstrafik."""
     fins = st.session_state.get("screen_fins", [])
@@ -233,6 +264,52 @@ def render():
         st.session_state["screen_read"] = len(batch)
         _rescreen(oms_min, oms_max, max_anstallda, min_lagerandel, max_marginal, hard_margin)
 
+        # Spara sökningen i databasen — överlever omstart/omladdning av appen.
+        if list_mode:
+            _label = f"Egen lista ({len(list_ids)} bolag)"
+        elif fritext.strip():
+            _label = f"'{fritext.strip()}' · {ort}"
+        else:
+            _label = f"{bransch_val} · {ort}"
+        _persist_screen_session(_label)
+
+    # Finns en sparad sökning i databasen (från förra sessionen)? Erbjud att
+    # återuppta den — poolen och de djuplästa bolagen laddas utan ny sökning.
+    if "screen_saved" not in st.session_state:
+        try:
+            st.session_state["screen_saved"] = db.load_screen_session()
+        except Exception:
+            st.session_state["screen_saved"] = None
+    _saved = st.session_state.get("screen_saved")
+    if _saved and (_saved.get("pool") or _saved.get("fins")) \
+            and not st.session_state.get("screen_result"):
+        _upd = (_saved.get("updated_at") or "")[:16].replace("T", " ")
+        st.divider()
+        st.info(f"💾 Sparad sökning: **{_saved.get('label') or 'okänd'}** — "
+                f"{len(_saved.get('pool') or [])} bolag i poolen, "
+                f"{_saved.get('read_count') or 0} djuplästa · {_upd}")
+        rc1, rc2 = st.columns(2)
+        with rc1:
+            if st.button("↩️ Återuppta sparad sökning", use_container_width=True,
+                         help="Laddar poolen och de redan djuplästa bolagen — "
+                              "ingen ny sökning, fortsätt granska fler direkt."):
+                st.session_state["screen_pool"] = _saved.get("pool") or []
+                st.session_state["screen_fins"] = _saved.get("fins") or []
+                st.session_state["screen_read"] = _saved.get("read_count") or 0
+                st.session_state["screen_funnel"] = _saved.get("funnel") or {}
+                st.session_state["screen_label"] = _saved.get("label") or ""
+                _rescreen(oms_min, oms_max, max_anstallda, min_lagerandel,
+                          max_marginal, hard_margin)
+                st.rerun()
+        with rc2:
+            if st.button("🗑️ Släng sparad sökning", use_container_width=True):
+                try:
+                    db.clear_screen_session()
+                except Exception:
+                    pass
+                st.session_state["screen_saved"] = None
+                st.rerun()
+
     res = st.session_state.get("screen_result")
     if res:
         q_all = res["qualified"]
@@ -282,6 +359,7 @@ def render():
                     st.session_state["screen_read"] = _read + len(nxt)
                     _rescreen(oms_min, oms_max, max_anstallda, min_lagerandel,
                               max_marginal, hard_margin)
+                    _persist_screen_session()   # håll sparad sökning i synk
                     st.rerun()
             else:
                 st.caption(f"✔️ Alla {_pool_total} bolag i bransch/band är djuplästa.")

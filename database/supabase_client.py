@@ -714,3 +714,33 @@ def save_daily_reflection(raw_notes: str, summary: str) -> dict:
         "summary": summary,
     }).execute()
     return result.data[0] if result.data else {}
+
+
+# ── Sparad bolagssökning ─────────────────────────────────────────────────────
+# Söksidans pool + djuplästa bolag sparas som EN rad (id=1) så att sökningen
+# överlever omstart/omladdning av appen och djupläsningen kan fortsätta senare.
+
+def save_screen_session(pool: list, fins: list, read: int,
+                        funnel: dict, label: str = "") -> None:
+    from datetime import datetime
+    client = get_client()
+    client.table("screen_sessions").upsert({
+        "id": 1,
+        "pool": pool,
+        "fins": fins,
+        "read_count": int(read),
+        "funnel": funnel,
+        "label": label,
+        "updated_at": datetime.utcnow().isoformat(),
+    }).execute()
+
+
+def load_screen_session() -> dict | None:
+    client = get_client()
+    result = client.table("screen_sessions").select("*").eq("id", 1).execute()
+    return result.data[0] if result.data else None
+
+
+def clear_screen_session() -> None:
+    client = get_client()
+    client.table("screen_sessions").delete().eq("id", 1).execute()

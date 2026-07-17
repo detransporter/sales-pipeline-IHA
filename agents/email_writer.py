@@ -489,7 +489,8 @@ def generate_email(
         user_msg += "\nOBS: Skriv mejlet på ENGELSKA (bolaget verkar internationellt)."
 
     # ── Anropa Claude ──────────────────────────────────────────────────────────
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    # max_retries=5: fler automatiska omförsök vid 529 Overloaded / tillfälliga fel
+    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"), max_retries=5)
     response = client.messages.create(
         model=MODEL,
         # Modellen tänker innan den svarar och tänkandet räknas in i max_tokens —
@@ -583,7 +584,7 @@ def generate_call_script(bolag, namn="", titel="", bransch="", orgnr="", website
                 + "\n".join(f"  {f}" for f in fakta) + krok + prof
                 + f"\n\nTilltala personen '{fornamn}'. Returnera bara manuset (ren text).")
     try:
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"), max_retries=5)
         resp = client.messages.create(
             model=MODEL, max_tokens=3000, system=_CALL_SYSTEM,
             messages=[{"role": "user", "content": user_msg}])
