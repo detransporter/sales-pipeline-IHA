@@ -24,6 +24,25 @@ except Exception:
 AUTO_BATCH = 3
 
 
+# Generiska adresser (info@, order@, ...) sparas inte som leadets e-post —
+# David vill bara ha personliga adresser i kortet. De skrapade adresserna syns
+# ändå som länkar på kortet, de tar bara inte e-postfältets plats.
+_GENERIC_LOCALPARTS = {
+    "info", "kontakt", "contact", "order", "sales", "forsaljning", "försäljning",
+    "office", "mail", "post", "hello", "hej", "support", "kundtjanst",
+    "kundservice", "admin", "reception", "faktura", "invoice", "webmaster",
+    "noreply", "no-reply",
+}
+
+
+def _personal_email(addr: str) -> str:
+    """Adressen om den är personlig, annars tom sträng."""
+    addr = (addr or "").strip()
+    if addr and addr.split("@")[0].lower() in _GENERIC_LOCALPARTS:
+        return ""
+    return addr
+
+
 def _enrich_lead(l, contact_cache) -> dict:
     """
     Berika ETT lead: hemsida (gratis gissning) + e-post + telefon (gratis) och rätt
@@ -43,7 +62,8 @@ def _enrich_lead(l, contact_cache) -> dict:
     if web:
         try:
             contact = _apify.find_emails(web, l.get("bolag", ""), render=False)
-            email = contact.get("best", "") or contact.get("guessed", "")
+            email = (_personal_email(contact.get("best", ""))
+                     or contact.get("guessed", ""))
             tel = contact.get("telefon", "")
             contact_cache[lid] = {**contact, "website": web}
             db.update_lead_suggestion_contact(lid, email=email, website=web, telefon=tel)
@@ -374,7 +394,9 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                                                      l.get("bolag", ""), render=True)
                         contact_cache[lid] = contact
                         db.update_lead_suggestion_contact(
-                            lid, email=contact.get("best", "") or contact.get("guessed", ""),
+                            lid,
+                            email=(_personal_email(contact.get("best", ""))
+                                   or contact.get("guessed", "")),
                             website=contact.get("website", ""), telefon=contact.get("telefon", ""))
                         _tel = contact.get("telefon", "")
                         if contact.get("best"):
