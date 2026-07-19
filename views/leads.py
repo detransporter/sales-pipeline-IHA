@@ -28,17 +28,27 @@ AUTO_BATCH = 3
 # David vill bara ha personliga adresser i kortet. De skrapade adresserna syns
 # ändå som länkar på kortet, de tar bara inte e-postfältets plats.
 _GENERIC_LOCALPARTS = {
-    "info", "kontakt", "contact", "order", "sales", "forsaljning", "försäljning",
-    "office", "mail", "post", "hello", "hej", "support", "kundtjanst",
-    "kundservice", "admin", "reception", "faktura", "invoice", "webmaster",
-    "noreply", "no-reply",
+    "info", "kontakt", "contact", "order", "orders", "sales", "forsaljning",
+    "försäljning", "office", "mail", "post", "hello", "hej", "support",
+    "kundtjanst", "kundservice", "kundcenter", "customercare", "customerservice",
+    "admin", "reception", "faktura", "invoice", "webmaster", "noreply",
+    "no-reply", "ekonomi", "economy", "finance", "ir", "hr", "marknad",
+    "marketing", "vaxel", "service", "butik", "shop", "export", "offert",
+    "website", "whistleblower",
 }
 
 
 def _personal_email(addr: str) -> str:
-    """Adressen om den är personlig, annars tom sträng."""
+    """Adressen om den är personlig, annars tom sträng (info@, ekonomi@ m.fl.)."""
     addr = (addr or "").strip()
-    if addr and addr.split("@")[0].lower() in _GENERIC_LOCALPARTS:
+    if not addr or "@" not in addr:
+        return ""
+    local = addr.split("@")[0].lower()
+    if local in _GENERIC_LOCALPARTS:
+        return ""
+    # bolag@bolag.se — lokaldelen är domännamnet = generisk företagsadress
+    domain_base = addr.split("@")[1].split(".")[0].lower()
+    if local == domain_base:
         return ""
     return addr
 
@@ -309,6 +319,17 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                 st.code(guessed, language=None)
             if telefon:
                 st.markdown(f"📞 [{telefon}](tel:{telefon})")
+            # Anmärkning: bearbetat lead (hemsida finns) utan personlig mejl —
+            # bara generiska adresser (info@/ekonomi@) fanns, och de sparas inte.
+            # Tydlig flagga så David enkelt kan avböja leadet.
+            if website and not (l.get("email") or "").strip():
+                if (l.get("namn") or "").strip():
+                    st.warning("⚠️ Ingen personlig mejl sparad — generiska adresser "
+                               "(info@/ekonomi@) sparas inte. Kör 🔍 Kontaktuppgifter, "
+                               "eller ❌ Avböj leadet.")
+                else:
+                    st.warning("⚠️ Varken person eller personlig mejl — "
+                               "kör 🔍 Kontaktuppgifter eller ❌ Avböj.")
             if l.get("motivering"):
                 st.caption(l["motivering"])
             # E-postkandidater från senaste personsökning — väntar på val
