@@ -49,7 +49,10 @@ except Exception:  # pragma: no cover
 
 load_dotenv()
 
-MODEL = "claude-sonnet-4-6"          # samma som lead_finder.py
+MODEL = "claude-sonnet-4-6"          # webbsök (web_search-verktyget kräver Sonnet)
+# Själva läsningen är enkel texttolkning (namn+titel ur sidtext) — Haiku klarar
+# den lika bra till en tredjedel av kostnaden. Volymdrivaren i bulk-körningar.
+READ_MODEL = "claude-haiku-4-5"
 
 # Undersidor i sannolikhetsordning — samma sidor David själv kollar manuellt.
 # Tom sträng = startsidan, som sista utväg.
@@ -342,7 +345,7 @@ def _read_pages(bolag: str, bransch: str, target_role: str,
     try:
         client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         response = client.messages.create(
-            model=MODEL,
+            model=READ_MODEL,
             max_tokens=600,
             system=READ_SYSTEM,
             messages=[{"role": "user", "content": user_message}],
