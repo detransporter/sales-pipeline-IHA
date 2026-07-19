@@ -292,11 +292,14 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                                 l["id"], found["namn"],
                                 found.get("titel", ""), found.get("linkedin_url", ""))
                             msg = f"{found['namn']} ({found.get('sakerhet','?')} säkerhet)"
-                            # Personlig mejl/telefon lästa vid namnet på sidan → spara direkt.
-                            if found.get("email") or found.get("telefon"):
+                            # Personlig mejl/telefon lästa vid namnet på sidan → spara
+                            # direkt. Hemsida som sökningen upptäckte (leadet saknade
+                            # en, t.ex. Meson AB → mesongroup.com) sparas också.
+                            if (found.get("email") or found.get("telefon")
+                                    or found.get("website")):
                                 db.update_lead_suggestion_contact(
                                     lid, email=found.get("email", ""),
-                                    website=l.get("website", ""),
+                                    website=found.get("website") or l.get("website", ""),
                                     telefon=found.get("telefon", ""))
                                 _extra = " · ".join(x for x in (found.get("email"),
                                                                 found.get("telefon")) if x)

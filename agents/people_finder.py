@@ -29,6 +29,7 @@ Open Brain nås via brain/open_brain.py (JSON-RPC över HTTP) — INTE via MCP.
 import os
 import re
 import json
+import urllib.parse
 import requests
 import anthropic
 from dotenv import load_dotenv
@@ -284,14 +285,18 @@ def _search_contact_page(bolag: str) -> str:
     Returnerar en URL eller tom sträng. Själva läsningen sker separat.
     """
     user = (
-        f'Sök: "{bolag}" kontakt ekonomichef OR CFO OR inköpschef OR VD\n'
-        f"Hitta URL:en till bolagets EGEN kontakt-, ledning- eller om oss-sida "
-        f"(inte allabolag/hitta.se/sociala medier).\n"
+        f'Hitta det svenska bolaget "{bolag}"s EGEN webbplats och där URL:en till '
+        f"deras kontakt-, ledning- eller om oss-sida.\n"
+        f"VIKTIGT: varumärket skiljer sig ofta från det juridiska namnet — "
+        f'"Meson AB" kan heta mesongroup.com, "Svensson Verktyg AB" kan heta '
+        f"svenssons.se. Sök först på bara bolagsnamnet om en snävare sökning inte "
+        f"ger något. Ta INTE allabolag/hitta.se/ratsit/LinkedIn/sociala medier — "
+        f"bara bolagets egen domän.\n"
         f'Returnera ENDAST JSON: {{"url": "https://... eller tom sträng"}}'
     )
     try:
         client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 2}]
+        tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 3}]
         messages = [{"role": "user", "content": user}]
         resp = client.messages.create(model=MODEL, max_tokens=500,
                                       tools=tools, messages=messages)
@@ -380,20 +385,41 @@ def find_person(bolag: str, website: str = "", target_role: str = "",
             if len(text) >= MIN_PAGE_CHARS:
                 pages.append((url, text))
 
-    # 2) Ingen undersida gav substans → web search får peka ut rätt sida.
+    # 2) Ingen undersida gav substans → web search får peka ut rätt sajt/sida.
+    #    Viktigt när hemsida saknas på leadet och varumärket skiljer sig från
+    #    juridiska namnet (Meson AB → mesongroup.com).
+    discovered_site = ""
     if not pages:
         found_url = _search_contact_page(bolag)
         if found_url:
+            p = urllib.parse.urlparse(found_url)
+            root = f"{p.scheme}://{p.netloc}"
+            if not base:
+                discovered_site = root
             text = _fetch_page_text(found_url)
             if len(text) >= MIN_PAGE_CHARS:
                 pages.append((found_url, text))
+            # Sökningen kan ha gett startsidan — följ dess menylänkar också.
+            if len(pages) < MAX_PAGES_TO_READ and fetches < MAX_FETCHES:
+                fetches += 1
+                home_html = _fetch_html(root)
+                for url in _discover_team_links(root, home_html):
+                    if fetches >= MAX_FETCHES or len(pages) >= MAX_PAGES_TO_READ:
+                        break
+                    if url.rstrip("/") == found_url.rstrip("/"):
+                        continue
+                    fetches += 1
+                    t = _fetch_page_text(url)
+                    if len(t) >= MIN_PAGE_CHARS:
+                        pages.append((url, t))
 
     if not pages:
         _log(f"[people_finder] {bolag}: ingen läsbar sida hittades "
              f"({fetches} hämtningar) — troligen JS-renderad sajt eller fel domän")
         _remember_outcome(bolag, bransch, "", "")
         return {"namn": "", "titel": "", "linkedin_url": "", "kalla": "ingen",
-                "källa": "", "sakerhet": "låg", "method": "claude_read",
+                "källa": "", "website": discovered_site, "sakerhet": "låg",
+                "method": "claude_read",
                 "motivering": "Ingen läsbar sida hittades på bolagets hemsida."}
 
     # 3) Claude läser texten och pekar ut personen.
@@ -407,7 +433,8 @@ def find_person(bolag: str, website: str = "", target_role: str = "",
         _log(f"[people_finder] {bolag}: läste {[u for u, _ in pages]} → ingen person")
         _remember_outcome(bolag, bransch, pages[0][0], "")
         return {"namn": "", "titel": "", "linkedin_url": "", "kalla": "ingen",
-                "källa": kalla_url, "sakerhet": "låg", "method": "claude_read",
+                "källa": kalla_url, "website": discovered_site, "sakerhet": "låg",
+                "method": "claude_read",
                 "motivering": str(data.get("motivering", "")).strip()
                 or "Ingen person med relevant roll i hemsidetexten."}
 
@@ -425,6 +452,8 @@ def find_person(bolag: str, website: str = "", target_role: str = "",
         "sakerhet": str(data.get("sakerhet", "")).strip() or "medel",
         "motivering": str(data.get("motivering", "")).strip(),
         "method": "claude_read",
+        # Hemsida upptäckt via sökningen (när leadet saknade en) — spara på leadet.
+        "website": discovered_site,
         # Personens egna kontaktuppgifter om de stod vid namnet i texten.
         "email": str(data.get("email", "")).strip(),
         "telefon": str(data.get("telefon", "")).strip(),
