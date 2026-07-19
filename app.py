@@ -121,6 +121,30 @@ except Exception:
     st.sidebar.caption("_(Anslut Supabase för statistik)_")
 
 
+# ── Versionsmärke — så David direkt ser om senaste push är live ──────────────
+def _version_label() -> str:
+    import subprocess
+    import datetime
+    try:
+        h = subprocess.check_output(
+            ["git", "log", "-1", "--format=%h · %ad", "--date=format:%d %b %H:%M"],
+            cwd=os.path.dirname(__file__), text=True, timeout=3).strip()
+        if h:
+            return h
+    except Exception:
+        pass
+    try:  # fallback: när .git saknas i molnet ≈ tidpunkten koden checkades ut
+        ts = os.path.getmtime(__file__)
+        return "utcheckad " + datetime.datetime.fromtimestamp(ts).strftime("%d %b %H:%M")
+    except Exception:
+        return ""
+
+
+_v = _version_label()
+if _v:
+    st.sidebar.caption(f"🔖 Version: {_v}")
+
+
 # ── Rita vald sida ───────────────────────────────────────────────────────────
 
 PAGES[page]()
