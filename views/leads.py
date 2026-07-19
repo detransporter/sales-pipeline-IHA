@@ -61,6 +61,16 @@ def _enrich_lead(l, contact_cache) -> dict:
                     lid, found["namn"], found.get("titel", ""),
                     found.get("linkedin_url", ""))
                 res["person"] = True
+                # Personlig mejl/telefon lästa vid namnet på sidan slår generiska
+                # info@-adresser; hemsida upptäckt via sökningen sparas också.
+                if (found.get("email") or found.get("telefon")
+                        or found.get("website")):
+                    db.update_lead_suggestion_contact(
+                        lid, email=found.get("email", ""),
+                        website=found.get("website") or web,
+                        telefon=found.get("telefon", ""))
+                    res["mail"] = res["mail"] or bool(found.get("email"))
+                    res["tel"] = res["tel"] or bool(found.get("telefon"))
         except Exception:
             pass
     return res
