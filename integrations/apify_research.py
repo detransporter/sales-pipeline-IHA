@@ -213,8 +213,14 @@ def _get_html(url: str) -> str:
     if not url:
         return ""
     try:
+        # Webbläsarlika headers — botskydd blockerar ofta okända robotar men
+        # släpper igenom vanliga webbläsare (viktigt från Streamlit Cloud).
         r = requests.get(url, timeout=15, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; LogisticsDoctorBot/1.0)"
+            "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                           "AppleWebKit/537.36 (KHTML, like Gecko) "
+                           "Chrome/126.0.0.0 Safari/537.36"),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "sv-SE,sv;q=0.9,en;q=0.8",
         })
         if r.status_code != 200 or not r.text:
             return ""

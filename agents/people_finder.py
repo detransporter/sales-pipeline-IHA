@@ -155,16 +155,29 @@ _WS_RE = re.compile(r"\s+")
 _HREF_RE = re.compile(r'<a[^>]+href=["\']([^"\']+)["\']', re.IGNORECASE)
 
 
+# Webbläsarlika headers — sajter (och deras botskydd) blockerar ofta okända
+# robotar men släpper igenom vanliga webbläsare. Detta gjorde att sökningen
+# funkade lokalt men inte från Streamlit Clouds servrar (Olle Svensson-fallet).
+_FETCH_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                   "AppleWebKit/537.36 (KHTML, like Gecko) "
+                   "Chrome/126.0.0.0 Safari/537.36"),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "sv-SE,sv;q=0.9,en;q=0.8",
+}
+
+
 def _fetch_html(url: str) -> str:
-    """Hämta rå HTML. Tom sträng vid fel."""
+    """Hämta rå HTML. Tom sträng vid fel (statusen loggas för felsökning)."""
     try:
-        r = requests.get(url, timeout=15, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; LogisticsDoctorBot/1.0)"
-        })
+        r = requests.get(url, timeout=15, headers=_FETCH_HEADERS)
         if r.status_code != 200 or not r.text:
+            _log(f"[people_finder] {url}: HTTP {r.status_code}, "
+                 f"{len(r.text or '')} tecken")
             return ""
         return r.text
-    except Exception:
+    except Exception as e:
+        _log(f"[people_finder] {url}: hämtning misslyckades ({type(e).__name__})")
         return ""
 
 

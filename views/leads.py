@@ -449,8 +449,15 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                             st.success(msg)
                             st.rerun()
                         else:
-                            st.warning("Hittade ingen tydlig person — kolla hemsidan manuellt "
-                                       "(kan vara en JS-sajt som inte går att läsa automatiskt).")
+                            # Visa VARFÖR det blev tomt + vilken sida som lästes —
+                            # gör felsökning möjlig utan att gräva i serverloggen.
+                            _why = (found.get("motivering") or "").strip()
+                            _src = (found.get("källa") or "").strip()
+                            st.warning("Hittade ingen tydlig person."
+                                       + (f" {_why}" if _why else "")
+                                       + (f" Läste: {_src}" if _src
+                                          else " Ingen sida gick att läsa — kan vara "
+                                               "JS-sajt eller blockerad hämtning."))
                     except Exception as e:
                         st.error(f"Fel: {e}")
         with cols[2]:
