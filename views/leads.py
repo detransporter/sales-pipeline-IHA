@@ -72,11 +72,14 @@ def _enrich_lead(l, contact_cache) -> dict:
             res["tel"] = bool(tel)
         except Exception:
             pass
-    if not l.get("namn"):
+    behov_person = not (l.get("namn") or "").strip()
+    behov_email = not (l.get("email") or "").strip()
+    if behov_person or behov_email:
         try:
             found = people_finder.find_person(
                 l.get("bolag", ""), web, l.get("titel", ""), l.get("bransch", ""))
-            if found.get("namn"):
+            if behov_person and found.get("namn"):
+                # Leadet saknade person → spara bästa valet + kontaktuppgifter.
                 db.update_lead_suggestion_person(
                     lid, found["namn"], found.get("titel", ""),
                     found.get("linkedin_url", ""))
@@ -91,6 +94,21 @@ def _enrich_lead(l, contact_cache) -> dict:
                         telefon=found.get("telefon", ""))
                     res["mail"] = res["mail"] or bool(found.get("email"))
                     res["tel"] = res["tel"] or bool(found.get("telefon"))
+            elif behov_email:
+                # Leadet HAR en person (Davids egen eller tidigare hittad) men
+                # saknar mejl. Skriv ALDRIG över namnet — leta i stället upp
+                # samma person bland de lästa kandidaterna och ta hens uppgifter.
+                mitt_namn = (l.get("namn") or "").strip().lower()
+                for k in found.get("kandidater") or []:
+                    if (k.get("namn", "").strip().lower() == mitt_namn
+                            and (k.get("email") or k.get("telefon"))):
+                        db.update_lead_suggestion_contact(
+                            lid, email=k.get("email", ""),
+                            website=found.get("website") or web,
+                            telefon=k.get("telefon", ""))
+                        res["mail"] = res["mail"] or bool(k.get("email"))
+                        res["tel"] = res["tel"] or bool(k.get("telefon"))
+                        break
         except Exception:
             pass
     return res
@@ -131,7 +149,8 @@ def render():
         # (gratis web search först, Apify bara om krediter finns).
         need_work = [l for l in pending
                      if l.get("id") and (not (l.get("website") or "").strip()
-                                         or not l.get("namn"))]
+                                         or not l.get("namn")
+                                         or not (l.get("email") or "").strip())]
         if need_work:
             bcol, tcol = st.columns([2, 1])
             with bcol:
