@@ -1,32 +1,44 @@
 """
-People-finder — hittar rätt PERSON att kontakta på ett bolag, säkert och gratis(-ish).
+People-finder — hittar rätt PERSON att kontakta på ett bolag genom att läsa
+bolagets egen hemsida, precis som David gör manuellt.
 
-Källor (i fallande kostnadsordning):
-  1. Bolagets egen hemsida (GRATIS, ingen LinkedIn) — team-/kontakt-/om-oss-sidor.
-  2a. Google → publika LinkedIn-profiler (via Apify) — kostar krediter. Används
-     bara om Apify är konfigurerat OCH det finns krediter kvar (samma tröskel som
-     leads.py visar kreditvarning vid, ~$0.50).
-  2b. Claude web search (GRATIS från Apify-krediter sett; drar Anthropic-sökningar)
-     — fallback när Apify saknas, krediterna är slut, eller Apify-vägen gav tomt.
+Metod (Claude-läsning som förstahandsval — ingen Apify, ingen LinkedIn):
+  1. Hämta text från de mest sannolika undersidorna (/kontakt, /kontakta-oss,
+     /om-oss, /ledning, ...) — provar i tur och ordning och samlar upp till
+     tre sidor med substantiellt innehåll.
+  2. Ger ingen undersida träff: en enkel Claude web search får peka ut rätt
+     sida ("[bolag]" kontakt VD OR inköpschef OR CFO), som sedan hämtas.
+  3. Claude LÄSER texten och identifierar namn kopplat till titel — det är
+     läsförståelse, inte skrapning. Prioritet: VD/CEO > CFO/Ekonomichef >
+     Inköpschef/Supply Chain > annan ledningsperson. Gissar aldrig — finns
+     inget namn i texten returneras tomt.
 
-Claude väger ihop källorna och pekar ut EN bästa person (namn + roll + ev. LinkedIn-URL).
-Den hittar aldrig på personer — saknas data returneras tomt. David verifierar alltid
-profilen innan kontakt.
+Varför inte Apify/LinkedIn längre: Apify-actorer är byggda för kontaktformulär
+och info@-adresser, inte för att koppla "Anna Svensson, Inköpschef" i löptext
+till en roll. LinkedIn gav sällan träffar för svenska SME i målgruppen.
 
 Open Brain-inlärning (tåligt — fel loggar aldrig sönder sökningen):
-  - Före sökning: hämtar tidigare lärdomar om personsökning för branschen.
-  - Efter sökning: sparar en kort notering (bolag, metod, om person hittades).
+  - Före sökning: hämtar tidigare lärdomar för branschen; nämner en lärdom en
+    undersida (t.ex. /ledning) provas den först.
+  - Efter sökning: sparar kort notering (bolag, vilken sida som gav träff,
+    om person hittades).
   - Rättningar fångas i views/leads.py (när David skriver över en felgissning).
-Open Brain nås via brain/open_brain.py (JSON-RPC över HTTP, OPEN_BRAIN_URL/KEY) —
-INTE via MCP; det körande Streamlit-appen kan inte anropa MCP-verktyg.
+Open Brain nås via brain/open_brain.py (JSON-RPC över HTTP) — INTE via MCP.
 """
 
 import os
+import re
 import json
+import requests
 import anthropic
 from dotenv import load_dotenv
 
-from integrations import apify_research as apify
+# BeautifulSoup ger strukturbevarande text (namn/titel/mejl hålls ihop rad för
+# rad, bild-alt-texter följer med). Tålig import — utan bs4 körs regex-strip.
+try:
+    from bs4 import BeautifulSoup
+except Exception:  # pragma: no cover
+    BeautifulSoup = None
 
 # Open Brain-klient (tålig import — appen funkar även utan minnet).
 try:
@@ -36,45 +48,58 @@ except Exception:  # pragma: no cover
 
 load_dotenv()
 
-MODEL = "claude-sonnet-4-6"          # samma som lead_finder.py; stödjer web_search_20260209
+MODEL = "claude-sonnet-4-6"          # samma som lead_finder.py
 
-# Under denna kreditnivå hoppar vi över den betalda Apify-vägen och kör gratis
-# web search istället — samma tröskel som kreditvarningen i views/leads.py.
-CREDIT_THRESHOLD = 0.50
+# Undersidor i sannolikhetsordning — samma sidor David själv kollar manuellt.
+# Tom sträng = startsidan, som sista utväg.
+CANDIDATE_PATHS = (
+    "kontakt", "kontakta-oss", "om-oss", "om-foretaget", "ledning",
+    "organisation", "medarbetare", "team", "contact", "about", "",
+)
 
-# Roller värda att kontakta för IHA (svenska + engelska sökord till Google).
-DEFAULT_ROLES = [
-    "inköpschef", "logistikchef", "supply chain", "operations manager",
-    "lagerchef", "ekonomichef", "CFO", "VD",
-]
+# Tak per bolag så en bulk-körning på 20+ leads inte springer iväg:
+MAX_FETCHES = 8      # max antal HTTP-hämtningar
+MAX_PAGES_TO_READ = 3  # max antal sidor som skickas till Claude (en läsning totalt)
+MIN_PAGE_CHARS = 400   # under detta räknas sidan som tom (JS-skal, 404-sida)
 
 
-SYSTEM = """Du hjälper David Leifsson (Logistics Doctor) att hitta RÄTT person att kontakta på ett
-bolag för att sälja IHA (lager-/kapitalbindningsanalys). Du får källor: text från bolagets
-hemsida och/eller publika LinkedIn-/webbträffar. Peka ut EN bästa person.
+READ_SYSTEM = """Du är en research-assistent för Baris AB / Logistics Doctor (David Leifsson).
+David säljer IHA (lager-/kapitalbindningsanalys) till svenska SME-bolag och behöver veta
+VEM på bolaget han ska kontakta. Du får text från bolagets egen hemsida (Kontakt/Om oss/
+Ledning-sidor). Din uppgift är RENODLAD LÄSFÖRSTÅELSE: hitta personer där ett namn står
+kopplat till en titel/roll i texten.
 
-PRIORITERA roller som äger lager/inköp/logistik/drift/ekonomi:
-Supply Chain Manager, Inköpschef, Logistikchef, Operations Manager, Lagerchef, COO,
-CFO/Ekonomichef, och i mindre bolag VD. Undvik HR, marknad, sälj, IT.
+PRIORITERA i denna ordning:
+1. VD/CEO
+2. CFO/Ekonomichef
+3. Inköpschef/Supply Chain Manager
+4. Annan ledningsperson (COO, Logistikchef, Lagerchef, Operations Manager, ägare)
+Undvik HR, marknad, sälj, IT, kundtjänst.
 
 HÅRDA REGLER:
-- Hitta ALDRIG på en person. Använd bara namn som faktiskt står i källorna.
-- Om en LinkedIn-träff används: kopiera URL:en EXAKT, ändra den aldrig.
-- Hittar du bara ett namn på hemsidan utan LinkedIn-URL: returnera namnet med tom URL.
-- Hittar du ingen lämplig person alls: returnera "namn": "".
-- LinkedIn-titlar ser ofta ut som "Namn Efternamn - Roll - Bolag | LinkedIn" — plocka isär det.
+- Hitta ALDRIG på en person. Använd bara namn som faktiskt står i texten.
+- Namnet måste stå kopplat till en titel/roll i texten — ett namn utan roll är
+  bara värt att returnera om ingen person med roll finns (sätt då sakerhet "låg").
+- Står e-post eller telefon i DIREKT anslutning till personen: ta med dem.
+  Ta INTE generiska adresser (info@, order@, växelnummer) som personens.
+- Hittar du ingen lämplig person: returnera "namn": "".
+- I "kalla_url": ange URL:en till den sida (av de märkta [Sida: ...]) där du
+  faktiskt hittade personen.
 
 Returnera ENDAST JSON:
 {
   "namn": "För- och efternamn, eller tom sträng",
-  "titel": "personens roll",
-  "linkedin_url": "exakt URL om känd, annars tom sträng",
-  "kalla": "hemsida | linkedin | webbsök | ingen",
+  "titel": "personens roll som den står i texten",
+  "email": "personens egen e-post om den står vid namnet, annars tom",
+  "telefon": "personens eget nummer om det står vid namnet, annars tom",
+  "kalla_url": "URL till sidan där personen hittades",
   "sakerhet": "hög | medel | låg",
   "motivering": "kort: varför denna person"
 }
 Ingen text utanför JSON."""
 
+
+# ── Småhjälpare ────────────────────────────────────────────────────────────────
 
 def _parse_json(raw: str) -> dict:
     raw = (raw or "").strip()
@@ -97,8 +122,110 @@ def _parse_json(raw: str) -> dict:
 
 
 def _log(msg: str) -> None:
-    """Enkel konsollogg så David ser vilken väg som kördes (appen har ingen logging-setup)."""
+    """Konsollogg så David ser vilken sida som lästes (appen har ingen logging-setup)."""
     print(msg)
+
+
+def _normalize_url(url: str) -> str:
+    url = (url or "").strip()
+    if not url:
+        return ""
+    if not url.startswith("http"):
+        url = "https://" + url
+    return url.rstrip("/")
+
+
+_TAG_RE = re.compile(r"<(script|style)[^>]*>.*?</\1>", re.DOTALL | re.IGNORECASE)
+_HTML_RE = re.compile(r"<[^>]+>")
+_WS_RE = re.compile(r"\s+")
+_HREF_RE = re.compile(r'<a[^>]+href=["\']([^"\']+)["\']', re.IGNORECASE)
+
+
+def _fetch_html(url: str) -> str:
+    """Hämta rå HTML. Tom sträng vid fel."""
+    try:
+        r = requests.get(url, timeout=15, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; LogisticsDoctorBot/1.0)"
+        })
+        if r.status_code != 200 or not r.text:
+            return ""
+        return r.text
+    except Exception:
+        return ""
+
+
+# Länkord som pekar mot personer — starka (nästan alltid rätt) före svaga.
+_LINK_STRONG = ("ledning", "ledningsgrupp", "styrelse", "medarbetare", "personal",
+                "team", "management", "leadership", "kontakt", "contact")
+_LINK_WEAK = ("om-oss", "om_oss", "omoss", "about", "organisation", "om-foretaget",
+              "foretaget", "people", "staff")
+
+
+def _discover_team_links(base: str, html: str, max_links: int = 5) -> list[str]:
+    """
+    Följ menylänkarna på startsidan till Om oss/Ledning/Kontakt — samma sak som
+    David gör manuellt. Löser sajter med språkprefix (/se/om-oss/...) där de
+    hårdkodade sökvägarna bommar.
+    """
+    if not html:
+        return []
+    import urllib.parse
+    base_host = urllib.parse.urlparse(base).netloc
+    strong: list[str] = []
+    weak: list[str] = []
+    seen: set[str] = set()
+    for href in _HREF_RE.findall(html):
+        absolute = urllib.parse.urljoin(base + "/", href).split("#")[0].rstrip("/")
+        p = urllib.parse.urlparse(absolute)
+        if p.scheme not in ("http", "https") or p.netloc != base_host:
+            continue
+        if absolute in seen or absolute == base:
+            continue
+        seen.add(absolute)
+        low = absolute.lower()
+        if any(w in low for w in _LINK_STRONG):
+            strong.append(absolute)
+        elif any(w in low for w in _LINK_WEAK):
+            weak.append(absolute)
+    return (strong + weak)[:max_links]
+
+
+def _fetch_page_text(url: str, max_chars: int = 4000) -> str:
+    """Hämta en sida och ge ren, strukturbevarande text. Tom sträng vid fel."""
+    html = _fetch_html(url)
+    if not html:
+        return ""
+    if not BeautifulSoup:
+        text = _HTML_RE.sub(" ", _TAG_RE.sub(" ", html))
+        return _WS_RE.sub(" ", text).strip()[:max_chars]
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        for tag in soup(["script", "style", "noscript", "svg", "iframe"]):
+            tag.decompose()
+        # Meny/navigering bort — på stora sajter äter megamenyn hela teckenbudgeten
+        # och trycker ut personnamnen. Huvudinnehållet ligger i <main> när det finns.
+        for tag in soup(["nav", "header", "aside"]):
+            tag.decompose()
+        main = soup.find("main")
+        if main and len(main.get_text(strip=True)) > 200:
+            soup = main
+        # Teamfoton bär ofta namnet i alt-texten — gör det synligt för Claude.
+        for img in soup.find_all("img"):
+            alt = (img.get("alt") or "").strip()
+            if 3 < len(alt) < 120:
+                img.replace_with(f" [bild: {alt}] ")
+        # Mejladresser ligger ofta bara i mailto-länken, inte i länktexten.
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if href.lower().startswith("mailto:"):
+                addr = href[7:].split("?")[0].strip()
+                if addr and addr not in a.get_text():
+                    a.append(f" <{addr}>")
+        lines = [ln.strip() for ln in soup.get_text(separator="\n").splitlines()]
+        return "\n".join(ln for ln in lines if ln)[:max_chars]
+    except Exception:
+        text = _HTML_RE.sub(" ", _TAG_RE.sub(" ", html))
+        return _WS_RE.sub(" ", text).strip()[:max_chars]
 
 
 # ── Open Brain-inlärning (tålig — fel får aldrig stoppa sökningen) ──────────────
@@ -116,118 +243,99 @@ def _recall_strategy(bransch: str, bolag: str) -> str:
         return ""
 
 
-def _remember_outcome(bolag: str, bransch: str, method: str,
-                      found_namn: str, titel: str = "") -> None:
+def _order_paths(strategy: str) -> list[str]:
+    """Nämner en lärdom en specifik undersida (t.ex. /ledning) — prova den först."""
+    paths = list(CANDIDATE_PATHS)
+    if not strategy:
+        return paths
+    low = strategy.lower()
+    hinted = [p for p in paths if p and p in low]
+    return hinted + [p for p in paths if p not in hinted]
+
+
+def _remember_outcome(bolag: str, bransch: str, hit_url: str, found_namn: str,
+                      titel: str = "") -> None:
     """Spara en kort notering om utfallet (för framtida sökningar). Tyst vid fel."""
     if not brain or not brain.is_configured():
         return
     try:
+        var = f" på {hit_url}" if hit_url else ""
         if found_namn:
-            body = (f"[people_finder] {bolag} ({bransch or 'okänd bransch'}): via {method} "
-                    f"→ hittade {found_namn}"
-                    + (f", {titel}" if titel else "") + ".")
+            body = (f"[people_finder] {bolag} ({bransch or 'okänd bransch'}): "
+                    f"hittade {found_namn}"
+                    + (f", {titel}" if titel else "") + f"{var} genom att läsa hemsidan.")
         else:
-            body = (f"[people_finder] {bolag} ({bransch or 'okänd bransch'}): via {method} "
-                    f"→ hittade ingen tydlig person. Prova annan roll/källa nästa gång.")
+            body = (f"[people_finder] {bolag} ({bransch or 'okänd bransch'}): "
+                    f"ingen person med roll i hemsidetexten{var}. "
+                    f"Prova annan undersida nästa gång.")
         brain.capture_thought(body[:400])
     except Exception:
         pass
 
 
-# ── Kreditkoll (samma logik som views/leads.py) ────────────────────────────────
+# ── Web search-reserv: hitta rätt SIDA när URL-mönstren inte ger något ──────────
 
-def _apify_credits_ok() -> bool:
-    """True om Apify-vägen får köras (okänt saldo = tillåt; känt lågt = hoppa över)."""
-    try:
-        cred = apify.remaining_usage_usd()
-    except Exception:
-        cred = None
-    return (cred is None) or (cred >= CREDIT_THRESHOLD)
-
-
-# ── Källa 2b: Claude web search (gratis från Apify-krediter sett) ───────────────
-
-def _web_search_person(bolag: str, target_role: str, bransch: str,
-                       website_text: str, strategy: str) -> dict:
+def _search_contact_page(bolag: str) -> str:
     """
-    Leta rätt person via Claudes inbyggda web search-verktyg (bolagets Om oss/Ledning
-    + publika LinkedIn). Returnerar {namn, titel, linkedin_url} eller {} vid fel.
+    Låt Claude web search peka ut bolagets kontakt-/ledningssida.
+    Returnerar en URL eller tom sträng. Själva läsningen sker separat.
     """
-    roles = target_role or "VD/CEO, CFO/Ekonomichef, Inköpschef eller Supply Chain Manager"
-    web_block = (f"\n\nTEXT FRÅN BOLAGETS HEMSIDA (utgångspunkt):\n{website_text[:2500]}"
-                 if website_text else "")
-    strat_block = (f"\n\nMINNE — tidigare lärdomar (använd bara om relevant):\n{strategy}"
-                   if strategy else "")
     user = (
-        f"Hitta rätt person att kontakta på bolaget \"{bolag}\" (bransch: {bransch or 'okänd'}) "
-        f"för att sälja IHA (lager-/kapitalbindningsanalys).\n"
-        f"Roll vi helst vill nå: {roles}. Prioritering: VD/CEO > CFO/Ekonomichef "
-        f"> Inköpschef/Supply Chain Manager > Logistik-/Lagerchef.\n"
-        f"Sök på webben: bolagets egen 'Om oss'/'Ledning'/'Team'/'Kontakt'-sida och "
-        f"publika LinkedIn-profiler för personer på just detta bolag. "
-        f"Hitta ALDRIG på en person — hittar du ingen tydlig, returnera tom sträng i \"namn\"."
-        f"{web_block}{strat_block}\n\n"
-        f"Returnera ENDAST JSON: "
-        f'{{"namn": "...", "titel": "...", "linkedin_url": "...", "sakerhet": "hög|medel|låg", '
-        f'"motivering": "kort"}}'
+        f'Sök: "{bolag}" kontakt VD OR inköpschef OR CFO\n'
+        f"Hitta URL:en till bolagets EGEN kontakt-, ledning- eller om oss-sida "
+        f"(inte allabolag/hitta.se/sociala medier).\n"
+        f'Returnera ENDAST JSON: {{"url": "https://... eller tom sträng"}}'
     )
     try:
         client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        # håll antalet sökningar lågt (kostnad) — max 3 per bolag
-        tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 3}]
+        tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 2}]
         messages = [{"role": "user", "content": user}]
-        resp = client.messages.create(model=MODEL, max_tokens=1024, system=SYSTEM,
+        resp = client.messages.create(model=MODEL, max_tokens=500,
                                       tools=tools, messages=messages)
-        # server-side tool-loop kan pausa (pause_turn) — återuppta max 3 gånger
+        # server-side tool-loop kan pausa (pause_turn) — återuppta max 2 gånger
         conts = 0
-        while getattr(resp, "stop_reason", None) == "pause_turn" and conts < 3:
+        while getattr(resp, "stop_reason", None) == "pause_turn" and conts < 2:
             messages = [{"role": "user", "content": user},
                         {"role": "assistant", "content": resp.content}]
-            resp = client.messages.create(model=MODEL, max_tokens=1024, system=SYSTEM,
+            resp = client.messages.create(model=MODEL, max_tokens=500,
                                           tools=tools, messages=messages)
             conts += 1
         text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
-        data = _parse_json(text)
-        data.setdefault("kalla", "webbsök")
-        return data
+        url = str(_parse_json(text).get("url", "")).strip()
+        return url if url.startswith("http") else ""
     except Exception as e:
-        _log(f"[people_finder] web search misslyckades för {bolag}: {e}")
-        return {}
+        _log(f"[people_finder] web search efter kontaktsida misslyckades för {bolag}: {e}")
+        return ""
 
 
-# ── Källa 1+2a: väg ihop hemsida + LinkedIn-träffar (Claude, ingen web tool) ────
+# ── Kärnan: Claude läser hemsidetexten ──────────────────────────────────────────
 
-def _pick_person(bolag: str, bransch: str, target_role: str,
-                 website_text: str, linkedin_hits: list, strategy: str) -> dict:
-    """Låt Claude peka ut bästa person ur hemsidetext + LinkedIn-träffar."""
-    li_block = "\n".join(
-        f"- {h['title']} | {h['url']} | {h.get('description','')[:160]}"
-        for h in linkedin_hits[:10]
-    ) or "(inga LinkedIn-träffar)"
-    web_block = website_text[:3000] if website_text else "(ingen hemsidetext)"
-    strat_block = (f"MINNE — tidigare lärdomar (använd bara om relevant):\n{strategy}\n\n"
+def _read_pages(bolag: str, bransch: str, target_role: str,
+                pages: list[tuple[str, str]], strategy: str) -> dict:
+    """Skicka de hämtade sidorna till Claude för läsning. pages = [(url, text)]."""
+    pages_block = "\n\n".join(f"[Sida: {u}]\n{t}" for u, t in pages)
+    strat_block = (f"\n\nMINNE — tidigare lärdomar (använd bara om relevant):\n{strategy}"
                    if strategy else "")
-
     user_message = (
         f"Bolag: {bolag}\n"
-        f"Bransch: {bransch}\n"
-        f"Roll vi helst vill nå: {target_role or '(ospecificerad — välj lämpligast)'}\n\n"
-        f"{strat_block}"
-        f"KÄLLA 1 — text från bolagets hemsida:\n{web_block}\n\n"
-        f"KÄLLA 2 — publika LinkedIn-träffar (från Google):\n{li_block}\n\n"
-        f"Peka ut den bästa personen att kontakta. Returnera JSON."
+        f"Bransch: {bransch or 'okänd'}\n"
+        f"Roll vi helst vill nå: {target_role or '(ospecificerad — följ prioritetsordningen)'}"
+        f"{strat_block}\n\n"
+        f"TEXT FRÅN BOLAGETS HEMSIDA:\n{pages_block}\n\n"
+        f"Identifiera bästa person. Returnera JSON."
     )
     try:
         client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         response = client.messages.create(
             model=MODEL,
-            max_tokens=500,
-            system=SYSTEM,
+            max_tokens=600,
+            system=READ_SYSTEM,
             messages=[{"role": "user", "content": user_message}],
         )
-        return _parse_json(response.content[0].text)
+        text = "".join(b.text for b in response.content if getattr(b, "type", "") == "text")
+        return _parse_json(text)
     except Exception as e:
-        _log(f"[people_finder] Claude-pick misslyckades för {bolag}: {e}")
+        _log(f"[people_finder] Claude-läsning misslyckades för {bolag}: {e}")
         return {}
 
 
@@ -236,101 +344,85 @@ def _pick_person(bolag: str, bransch: str, target_role: str,
 def find_person(bolag: str, website: str = "", target_role: str = "",
                 bransch: str = "") -> dict:
     """
-    Hitta bästa person att kontakta. Returnerar dict (se SYSTEM) — namn tomt om inget hittas.
-
-    Väg: hemsidan (gratis) → LinkedIn via Apify om krediter finns → annars/därefter
-    gratis Claude web search. Nyckeln 'method' ('apify' | 'claude_search' | 'website' |
-    'none') säger vilken väg som gav svaret; ADDITIV så äldre anropare (som bara läser
-    namn/titel/linkedin_url) inte påverkas.
+    Hitta bästa person att kontakta genom att LÄSA bolagets hemsida (Claude).
+    Returnerar dict — namn tomt om inget hittas. Nycklar som anropare läser
+    (namn/titel/linkedin_url/sakerhet) är oförändrade; 'method' är nu alltid
+    'claude_read' och 'källa' är URL:en till sidan som faktiskt lästes.
     """
     bolag = (bolag or "").strip()
     if not bolag:
-        return {"namn": "", "kalla": "ingen", "sakerhet": "låg", "method": "none"}
+        return {"namn": "", "kalla": "ingen", "sakerhet": "låg", "method": "none",
+                "källa": "", "linkedin_url": ""}
 
-    # Open Brain: hämta ev. strategi för branschen innan vi söker.
+    # Open Brain: tidigare lärdomar kan styra vilken undersida som provas först.
     strategy = _recall_strategy(bransch, bolag)
 
-    roles = ([target_role] if target_role else []) + DEFAULT_ROLES
+    # 1) Hämta de mest sannolika sidorna — stanna när vi samlat nog.
+    #    Startsidans menylänkar först (som David gör manuellt — löser sajter
+    #    med språkprefix), sen de hårdkodade sökvägarna som komplement.
+    pages: list[tuple[str, str]] = []
+    fetches = 0
+    base = _normalize_url(website)
+    if base:
+        home_html = _fetch_html(base)
+        fetches += 1
+        candidates = _discover_team_links(base, home_html)
+        candidates += [f"{base}/{p}" if p else base for p in _order_paths(strategy)
+                       if (f"{base}/{p}" if p else base) not in candidates]
+        for url in candidates:
+            if fetches >= MAX_FETCHES or len(pages) >= MAX_PAGES_TO_READ:
+                break
+            fetches += 1
+            text = _fetch_page_text(url)
+            if len(text) >= MIN_PAGE_CHARS:
+                pages.append((url, text))
 
-    # Källa 1 — hemsidan (gratis, alltid)
-    website_text = ""
-    if website:
-        try:
-            website_text = apify.fetch_people_pages(website)
-        except Exception:
-            website_text = ""
+    # 2) Ingen undersida gav substans → web search får peka ut rätt sida.
+    if not pages:
+        found_url = _search_contact_page(bolag)
+        if found_url:
+            text = _fetch_page_text(found_url)
+            if len(text) >= MIN_PAGE_CHARS:
+                pages.append((found_url, text))
 
-    use_apify = apify.is_configured() and _apify_credits_ok()
+    if not pages:
+        _log(f"[people_finder] {bolag}: ingen läsbar sida hittades "
+             f"({fetches} hämtningar) — troligen JS-renderad sajt eller fel domän")
+        _remember_outcome(bolag, bransch, "", "")
+        return {"namn": "", "titel": "", "linkedin_url": "", "kalla": "ingen",
+                "källa": "", "sakerhet": "låg", "method": "claude_read",
+                "motivering": "Ingen läsbar sida hittades på bolagets hemsida."}
 
-    data: dict = {}
-    method = "none"
-    linkedin_hits: list = []
-
-    # Källa 2a — Google → LinkedIn via Apify (bara om konfigurerat + krediter kvar)
-    if use_apify:
-        try:
-            linkedin_hits = apify.find_linkedin_profiles(bolag, roles, max_results=10)
-        except Exception:
-            linkedin_hits = []
-        if website_text or linkedin_hits:
-            data = _pick_person(bolag, bransch, target_role, website_text,
-                                linkedin_hits, strategy)
-            method = "apify" if linkedin_hits else "website"
-
-    # Källa 2b — gratis Claude web search som fallback (ingen Apify / slut på krediter /
-    # Apify-vägen gav ingen person).
-    if not str(data.get("namn", "")).strip():
-        ws = _web_search_person(bolag, target_role, bransch, website_text, strategy)
-        if str(ws.get("namn", "")).strip():
-            data, method = ws, "claude_search"
-        elif not data and website_text:
-            # Sista utväg: pick enbart på hemsidetext (om web search också gav tomt).
-            data = _pick_person(bolag, bransch, target_role, website_text, [], strategy)
-            method = "website"
+    # 3) Claude läser texten och pekar ut personen.
+    data = _read_pages(bolag, bransch, target_role, pages, strategy)
 
     namn = str(data.get("namn", "")).strip()
-
-    # Skyddsnät: en LinkedIn-URL från Apify-vägen måste finnas bland träffarna.
-    url = str(data.get("linkedin_url", "")).strip()
-    if method == "apify" and url and url.lower() not in {h["url"].lower() for h in linkedin_hits}:
-        url = ""
+    titel = str(data.get("titel", "")).strip() or target_role
+    kalla_url = str(data.get("kalla_url", "")).strip() or pages[0][0]
 
     if not namn:
-        _log(f"[people_finder] {bolag}: metod={method} → ingen person")
-        _remember_outcome(bolag, bransch, method, "")
-        return {"namn": "", "kalla": "ingen", "sakerhet": "låg", "method": method,
+        _log(f"[people_finder] {bolag}: läste {[u for u, _ in pages]} → ingen person")
+        _remember_outcome(bolag, bransch, pages[0][0], "")
+        return {"namn": "", "titel": "", "linkedin_url": "", "kalla": "ingen",
+                "källa": kalla_url, "sakerhet": "låg", "method": "claude_read",
                 "motivering": str(data.get("motivering", "")).strip()
-                or "Ingen publik källa hittade en person.",
-                "kandidater": linkedin_hits[:5]}
+                or "Ingen person med relevant roll i hemsidetexten."}
 
-    # Konstruera personlig e-post om vi vet vem personen är + har hemsida.
-    email_info: dict = {}
-    if namn and website:
-        try:
-            existing = apify._EMAIL_RE.findall(website_text)
-            email_info = apify.construct_person_email(namn, website, existing)
-        except Exception:
-            email_info = {}
+    _log(f"[people_finder] {bolag}: läste {kalla_url} → {namn} ({titel})")
+    _remember_outcome(bolag, bransch, kalla_url, namn, titel)
 
-    titel = str(data.get("titel", "")).strip() or target_role
-    _log(f"[people_finder] {bolag}: metod={method} → {namn} ({titel})")
-    _remember_outcome(bolag, bransch, method, namn, titel)
-
-    _default_kalla = {"apify": "linkedin", "claude_search": "webbsök"}.get(method, "hemsida")
     return {
         "namn": namn,
         "titel": titel,
-        "linkedin_url": url,
-        "kalla": str(data.get("kalla", "")).strip() or _default_kalla,
-        "sakerhet": str(data.get("sakerhet", "")).strip() or "låg",
+        # LinkedIn används inte längre som källa — fältet behålls (tomt) så
+        # anropande kod inte går sönder.
+        "linkedin_url": "",
+        "kalla": "hemsida",
+        "källa": kalla_url,
+        "sakerhet": str(data.get("sakerhet", "")).strip() or "medel",
         "motivering": str(data.get("motivering", "")).strip(),
-        "kandidater": linkedin_hits[:5],
-        # Vilken väg som gav svaret (additiv nyckel).
-        "method": method,
-        # E-post konstruerad från namnmönster + domän
-        "email": email_info.get("email", ""),
-        "email_candidates": email_info.get("candidates", []),
-        "email_pattern": email_info.get("pattern", ""),
-        "email_verified": email_info.get("verified"),
-        "email_catch_all": email_info.get("catch_all", False),
+        "method": "claude_read",
+        # Personens egna kontaktuppgifter om de stod vid namnet i texten.
+        "email": str(data.get("email", "")).strip(),
+        "telefon": str(data.get("telefon", "")).strip(),
     }
