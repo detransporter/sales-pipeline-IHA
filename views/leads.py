@@ -289,6 +289,41 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                     del st.session_state[cand_key]
                     st.session_state.pop(f"found_pat_{lid}", None)
                     st.rerun()
+            # Personkandidater från senaste sökningen — välj vem som sparas på kortet.
+            # Titel + mejl/telefon visas bakom namnet så du ser vem som är vem.
+            people_key = f"found_people_{lid}"
+            if people_key in st.session_state:
+                folk = st.session_state[people_key]
+
+                def _person_label(p: dict) -> str:
+                    label = p.get("namn", "")
+                    if p.get("titel"):
+                        label += f" — {p['titel']}"
+                    extra = " · ".join(x for x in (p.get("email"), p.get("telefon")) if x)
+                    return label + (f"  ({extra})" if extra else "")
+
+                st.info(f"👥 {len(folk)} personer hittades på hemsidan — välj vem som sparas:")
+                psel = st.selectbox("Person", folk, format_func=_person_label,
+                                    key=f"sel_person_{lid}",
+                                    label_visibility="collapsed")
+                pc1, pc2 = st.columns([2, 1])
+                with pc1:
+                    if st.button("💾 Spara vald person", key=f"save_person_{lid}",
+                                 type="primary"):
+                        db.update_lead_suggestion_person(
+                            lid, psel["namn"], psel.get("titel", ""),
+                            l.get("linkedin_url", ""))
+                        if psel.get("email") or psel.get("telefon"):
+                            db.update_lead_suggestion_contact(
+                                lid, email=psel.get("email", ""), website=website,
+                                telefon=psel.get("telefon", ""))
+                        del st.session_state[people_key]
+                        st.rerun()
+                with pc2:
+                    if st.button("Stäng", key=f"close_people_{lid}",
+                                 help="Behåll nuvarande person och göm listan."):
+                        del st.session_state[people_key]
+                        st.rerun()
         with cols[1]:
             if lid and st.button("🔍 Kontaktuppgifter", key=f"person_{lid}",
                                  use_container_width=True):
@@ -319,6 +354,10 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                                 st.session_state[f"found_emails_{lid}"] = found["email_candidates"]
                                 st.session_state[f"found_pat_{lid}"] = found.get("email_pattern", "")
                                 msg += " — välj e-post nedan"
+                            # Fler personer lästa på sidan → visa väljare i kortet
+                            if len(found.get("kandidater") or []) > 1:
+                                st.session_state[f"found_people_{lid}"] = found["kandidater"]
+                                msg += f" — {len(found['kandidater'])} personer hittades, välj nedan"
                             st.success(msg)
                             st.rerun()
                         else:

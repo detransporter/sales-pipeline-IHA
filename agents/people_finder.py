@@ -92,14 +92,21 @@ HÅRDA REGLER:
 
 Returnera ENDAST JSON:
 {
-  "namn": "För- och efternamn, eller tom sträng",
+  "namn": "För- och efternamn (bästa valet), eller tom sträng",
   "titel": "personens roll som den står i texten",
   "email": "personens egen e-post om den står vid namnet, annars tom",
   "telefon": "personens eget nummer om det står vid namnet, annars tom",
   "kalla_url": "URL till sidan där personen hittades",
   "sakerhet": "hög | medel | låg",
-  "motivering": "kort: varför denna person"
+  "motivering": "kort: varför denna person",
+  "kandidater": [
+    {"namn": "...", "titel": "...", "email": "...", "telefon": "..."}
+  ]
 }
+"kandidater" = ALLA personer med namn + roll du hittade i texten (max 8), i
+prioritetsordning med bästa valet först — även roller utanför prioriteringen
+(VD, platschef, sälj) så David själv kan välja. Samma regler: bara namn som
+står i texten, mejl/telefon bara om de står vid personens namn.
 Ingen text utanför JSON."""
 
 
@@ -429,12 +436,23 @@ def find_person(bolag: str, website: str = "", target_role: str = "",
     titel = str(data.get("titel", "")).strip() or target_role
     kalla_url = str(data.get("kalla_url", "")).strip() or pages[0][0]
 
+    # Alla personer med namn + roll som lästes på sidan — David väljer i kortet.
+    kandidater = []
+    for k in (data.get("kandidater") or [])[:8]:
+        if isinstance(k, dict) and str(k.get("namn", "")).strip():
+            kandidater.append({
+                "namn": str(k.get("namn", "")).strip(),
+                "titel": str(k.get("titel", "")).strip(),
+                "email": str(k.get("email", "")).strip(),
+                "telefon": str(k.get("telefon", "")).strip(),
+            })
+
     if not namn:
         _log(f"[people_finder] {bolag}: läste {[u for u, _ in pages]} → ingen person")
         _remember_outcome(bolag, bransch, pages[0][0], "")
         return {"namn": "", "titel": "", "linkedin_url": "", "kalla": "ingen",
                 "källa": kalla_url, "website": discovered_site, "sakerhet": "låg",
-                "method": "claude_read",
+                "method": "claude_read", "kandidater": kandidater,
                 "motivering": str(data.get("motivering", "")).strip()
                 or "Ingen person med relevant roll i hemsidetexten."}
 
@@ -457,4 +475,6 @@ def find_person(bolag: str, website: str = "", target_role: str = "",
         # Personens egna kontaktuppgifter om de stod vid namnet i texten.
         "email": str(data.get("email", "")).strip(),
         "telefon": str(data.get("telefon", "")).strip(),
+        # Alla lästa personer (namn/titel/mejl/tel) — för väljaren i leadskortet.
+        "kandidater": kandidater,
     }
