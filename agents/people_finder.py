@@ -70,11 +70,14 @@ Ledning-sidor). Din uppgift är RENODLAD LÄSFÖRSTÅELSE: hitta personer där e
 kopplat till en titel/roll i texten.
 
 PRIORITERA i denna ordning:
-1. VD/CEO
-2. CFO/Ekonomichef
-3. Inköpschef/Supply Chain Manager
-4. Annan ledningsperson (COO, Logistikchef, Lagerchef, Operations Manager, ägare)
-Undvik HR, marknad, sälj, IT, kundtjänst.
+1. CFO/Ekonomichef/Ekonomiansvarig (även bara "Ekonomi" som avdelningsetikett)
+2. Inköpschef/Inköpsansvarig/Supply Chain Manager (även bara "Inköp")
+3. Logistikchef/Lagerchef/Operations Manager/COO
+4. VD/CEO (först när ingen ovan finns — i småbolag äger VD ofta ekonomin/inköpet)
+Undvik HR, marknad, sälj, IT, kundtjänst, produktion.
+
+OBS: På kontaktsidor står rollen ofta som kort avdelningsetikett OVANFÖR eller
+BREDVID namnet ("EKONOMI", "INKÖP", "VD") — koppla etiketten till namnet under/intill.
 
 HÅRDA REGLER:
 - Hitta ALDRIG på en person. Använd bara namn som faktiskt står i texten.
@@ -281,7 +284,7 @@ def _search_contact_page(bolag: str) -> str:
     Returnerar en URL eller tom sträng. Själva läsningen sker separat.
     """
     user = (
-        f'Sök: "{bolag}" kontakt VD OR inköpschef OR CFO\n'
+        f'Sök: "{bolag}" kontakt ekonomichef OR CFO OR inköpschef OR VD\n'
         f"Hitta URL:en till bolagets EGEN kontakt-, ledning- eller om oss-sida "
         f"(inte allabolag/hitta.se/sociala medier).\n"
         f'Returnera ENDAST JSON: {{"url": "https://... eller tom sträng"}}'
