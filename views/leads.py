@@ -38,6 +38,20 @@ _GENERIC_LOCALPARTS = {
 }
 
 
+def _same_person(a: str, b: str) -> bool:
+    """
+    Samma person trots olika namnform? Registret skriver ofta alla förnamn
+    ("Per Lennart Axelsson") medan hemsidan skriver tilltalsnamnet ("Per
+    Axelsson"). Matchar när det ena namnets ord ryms i det andras — minst
+    för- och efternamn gemensamma.
+    """
+    ta = set((a or "").lower().split())
+    tb = set((b or "").lower().split())
+    if len(ta) < 2 or len(tb) < 2:
+        return False
+    return ta <= tb or tb <= ta
+
+
 def _personal_email(addr: str) -> str:
     """Adressen om den är personlig, annars tom sträng (info@, ekonomi@ m.fl.)."""
     addr = (addr or "").strip()
@@ -108,9 +122,9 @@ def _enrich_lead(l, contact_cache) -> dict:
                 # Leadet HAR en person (Davids egen eller tidigare hittad) men
                 # saknar mejl. Skriv ALDRIG över namnet — leta i stället upp
                 # samma person bland de lästa kandidaterna och ta hens uppgifter.
-                mitt_namn = (l.get("namn") or "").strip().lower()
+                mitt_namn = (l.get("namn") or "").strip()
                 for k in found.get("kandidater") or []:
-                    if (k.get("namn", "").strip().lower() == mitt_namn
+                    if (_same_person(k.get("namn", ""), mitt_namn)
                             and (k.get("email") or k.get("telefon"))):
                         db.update_lead_suggestion_contact(
                             lid, email=k.get("email", ""),
