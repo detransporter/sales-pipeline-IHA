@@ -69,7 +69,7 @@ def _enrich_lead(l, contact_cache) -> dict:
 def render():
     st.title("🌱 Leads")
     st.caption("Sparade leads som väntar på person + godkännande. "
-               "Hitta person → verifiera på LinkedIn → godkänn för att lägga i pipeline.")
+               "Hämta kontaktuppgifter → verifiera på källsidan → godkänn för att lägga i pipeline.")
 
     try:
         pending = db.get_lead_suggestions(status="pending")
@@ -280,9 +280,9 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                     st.session_state.pop(f"found_pat_{lid}", None)
                     st.rerun()
         with cols[1]:
-            if lid and st.button("🔍 Person", key=f"person_{lid}",
+            if lid and st.button("🔍 Kontaktuppgifter", key=f"person_{lid}",
                                  use_container_width=True):
-                with st.spinner("Söker rätt person (hemsida + Google→LinkedIn)..."):
+                with st.spinner("Läser bolagets hemsida efter rätt person..."):
                     try:
                         found = people_finder.find_person(
                             l.get("bolag", ""), l.get("website", ""),
@@ -292,6 +292,15 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                                 l["id"], found["namn"],
                                 found.get("titel", ""), found.get("linkedin_url", ""))
                             msg = f"{found['namn']} ({found.get('sakerhet','?')} säkerhet)"
+                            # Personlig mejl/telefon lästa vid namnet på sidan → spara direkt.
+                            if found.get("email") or found.get("telefon"):
+                                db.update_lead_suggestion_contact(
+                                    lid, email=found.get("email", ""),
+                                    website=l.get("website", ""),
+                                    telefon=found.get("telefon", ""))
+                                _extra = " · ".join(x for x in (found.get("email"),
+                                                                found.get("telefon")) if x)
+                                msg += f" — {_extra}"
                             # Spara e-postkandidater i session state → visas som selectbox i kortet
                             if found.get("email_candidates"):
                                 st.session_state[f"found_emails_{lid}"] = found["email_candidates"]
@@ -300,7 +309,8 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                             st.success(msg)
                             st.rerun()
                         else:
-                            st.warning("Hittade ingen tydlig person — kolla LinkedIn manuellt.")
+                            st.warning("Hittade ingen tydlig person — kolla hemsidan manuellt "
+                                       "(kan vara en JS-sajt som inte går att läsa automatiskt).")
                     except Exception as e:
                         st.error(f"Fel: {e}")
         with cols[2]:
