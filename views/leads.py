@@ -303,22 +303,36 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                         f"**{l.get('bolag')}** — {l.get('titel')} · "
                         f"_{l.get('bransch','')}_ (score {l.get('score', 0)})")
             if l.get("namn"):
-                st.markdown(f"👤 **{l['namn']}** · "
+                _t = (l.get("titel") or "").strip()
+                st.markdown(f"👤 **{l['namn']}**" + (f" — {_t}" if _t else "") + " · "
                             + person_link_inline(l["namn"], l.get("bolag", ""),
                                                  l.get("linkedin_url", "")))
             else:
                 st.caption("👤 _Ingen person hittad ännu — tryck 'Hitta person'._")
             if website:
                 st.markdown(f"🌐 [Företagets hemsida]({website})")
-            if emails:
-                links = " · ".join(f"[{e}](mailto:{e})" for e in emails[:4])
+            # Visa bara PERSONLIGA adresser — info@/order@ m.fl. är brus för David.
+            # Sparad adress märks med personens titel så man ser vem den tillhör.
+            _personal = [e for e in emails if _personal_email(e)]
+            _saved = (l.get("email") or "").strip().lower()
+            _t = (l.get("titel") or "").strip()
+            if _personal:
+                links = " · ".join(
+                    f"[{e}](mailto:{e})"
+                    + (f" _({_t})_" if _t and e.strip().lower() == _saved else "")
+                    for e in _personal[:4])
                 st.markdown(f"✉️ {links}")
-                st.code(emails[0], language=None)
+                st.code(_personal[0], language=None)
             elif guessed:
                 st.markdown(f"✉️ {guessed}  ·  _kvalificerad gissning (ej verifierad)_")
                 st.code(guessed, language=None)
+            _hidden = len(emails) - len(_personal)
+            if _hidden > 0:
+                st.caption(f"_{_hidden} generisk(a) adress(er) dolda (info@ m.fl.) — "
+                           f"finns kvar på hemsidan om de behövs._")
             if telefon:
-                st.markdown(f"📞 [{telefon}](tel:{telefon})")
+                _tel_href = "tel:" + re.sub(r"[^\d+]", "", telefon)
+                st.markdown(f"📞 [{telefon}]({_tel_href})")
             # Anmärkning: bearbetat lead (hemsida finns) utan personlig mejl —
             # bara generiska adresser (info@/ekonomi@) fanns, och de sparas inte.
             # Tydlig flagga så David enkelt kan avböja leadet.
