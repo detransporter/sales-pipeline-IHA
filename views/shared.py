@@ -329,6 +329,14 @@ def render_company_analysis(a: dict) -> None:
 
 
 # ── Litet felhanterings-skal (ersätter upprepade try/except → st.error) ──────
+#
+# STANDARD för nytt kodblock: använd shared.action(...) nedan, inte en egen
+# try/except Exception as e: st.error(f"Fel: {e}"). pipeline.py och agent.py
+# följer redan detta fullt ut. replies.py/meetings.py/today.py/import_contacts.py
+# har ~23 äldre try/except-block som INTE är omskrivna — en mekanisk
+# massomskrivning riskerade att missa särlogik i enskilda block (early
+# returns, extra sidoeffekter) för en ren stilfråga. Konvertera dem i taget
+# nästa gång du ändå är inne i respektive block, inte i en enda stor svep.
 
 class action:
     """

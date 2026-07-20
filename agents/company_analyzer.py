@@ -55,11 +55,6 @@ def classify_business_model(bolag: str, bransch: str = "", website_text: str = "
     except Exception:
         return ""
 
-# Standardantaganden (Davids IHA-ramverk). Justerbara om vi vill senare.
-CARRYING_COST_PCT = 0.20          # årlig lagerhållningskostnad ~20% av varulagervärdet
-RELEASE_LOW_PCT = 0.15            # försiktig uppskattning av frigörbart kapital
-RELEASE_HIGH_PCT = 0.25          # optimistisk uppskattning
-
 SYSTEM = """Du är David Leifsson (Logistics Doctor / Baris AB), supply chain-konsult med 20 års
 erfarenhet. Du gör en DJUP föranalys av ett bolag inför en första kontakt, för att sälja IHA
 (Inventory Health Assessment — en analys som frigör kapital bundet i för stora/döda lager).
@@ -120,11 +115,14 @@ def compute_potential(varulager_msek) -> dict:
         return {}
     if v <= 0:
         return {}
+    # Konstanterna bor i iha_metrics.py — samma tal används där för den
+    # fullständiga KPI-motorn. Höll de tidigare på två ställen med identiska
+    # värden, risk att en uppdateras och den andra glöms.
     return {
         "varulager_msek": round(v, 1),
-        "arlig_lagerkostnad_msek": round(v * CARRYING_COST_PCT, 1),
-        "frigorbart_lag_msek": round(v * RELEASE_LOW_PCT, 1),
-        "frigorbart_hog_msek": round(v * RELEASE_HIGH_PCT, 1),
+        "arlig_lagerkostnad_msek": round(v * iha_metrics.CARRYING_COST_PCT, 1),
+        "frigorbart_lag_msek": round(v * iha_metrics.RELEASE_LOW_PCT, 1),
+        "frigorbart_hog_msek": round(v * iha_metrics.RELEASE_HIGH_PCT, 1),
     }
 
 
