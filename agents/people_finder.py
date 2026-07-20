@@ -170,7 +170,9 @@ _FETCH_HEADERS = {
 def _fetch_html(url: str) -> str:
     """Hämta rå HTML. Tom sträng vid fel (statusen loggas för felsökning)."""
     try:
-        r = requests.get(url, timeout=15, headers=_FETCH_HEADERS)
+        # 8 sek (inte 15) — sidor som svarar inom rimlig tid gör det inom
+        # ett par sekunder; en trög/blockerad sajt ska inte hänga sökningen.
+        r = requests.get(url, timeout=8, headers=_FETCH_HEADERS)
         if r.status_code != 200 or not r.text:
             _log(f"[people_finder] {url}: HTTP {r.status_code}, "
                  f"{len(r.text or '')} tecken")
@@ -445,8 +447,12 @@ def find_person(bolag: str, website: str = "", target_role: str = "",
         if target:
             try:
                 from integrations.apify_research import (_crawl_rendered,
-                                                         _soup_text, is_configured)
-                if is_configured():
+                                                         _soup_text, is_configured,
+                                                         remaining_usage_usd)
+                # Slut på krediter → Apify skulle ändå bara vänta ut sin timeout
+                # (upp till 5 min) innan den ger upp. Hoppa över direkt i stället.
+                _credits = remaining_usage_usd()
+                if is_configured() and (_credits is None or _credits >= 0.10):
                     # Bara 3 sidor — varje renderad sida kostar krediter.
                     urls = [f"{target}/{p}" if p else target
                             for p in ("kontakt", "contact", "")]

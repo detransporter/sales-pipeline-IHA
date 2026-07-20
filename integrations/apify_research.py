@@ -46,8 +46,10 @@ GOOGLE_ACTOR = os.getenv("APIFY_GOOGLE_ACTOR", "apify/google-search-scraper").st
 # i rå HTML. Dyrare än plain scrape, så den körs BARA när vanlig skrapning gett noll.
 RENDER_ACTOR = os.getenv("APIFY_RENDER_ACTOR", "apify/website-content-crawler").strip()
 
-# run-sync väntar tills körningen är klar (max ~5 min). Bra för små scrapes.
-RUN_TIMEOUT = 300
+# run-sync väntar tills körningen är klar. 5 min var ohållbart i people_finder
+# (David satt och väntade på en enda person) — 90 sek räcker för 3 sidor och
+# ger upp snabbt istället för att hänga.
+RUN_TIMEOUT = 90
 
 # Senaste Apify-felet i klartext (tomt = inget fel). Sätts av _run_actor så att
 # UI:t kan säga t.ex. "krediterna slut" istället för att tyst hitta ingenting.
