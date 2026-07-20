@@ -295,7 +295,9 @@ def _render_followup_card(item):
         try:
             dm = db.insert_dm(pid, logmsg, typ=typ)
             db.mark_dm_skickad(dm["id"])
-            db.update_prospect_status(pid, new_status)
+            db.update_prospect_status(
+                pid, new_status,
+                meeting_date=meeting_date.isoformat() if meeting_date else None)
             if meeting_date is not None:
                 db.insert_meeting(pid, meeting_date.isoformat())
                 st.success(f"✅ Möte bokat {meeting_date} — syns nu under 📅 Möten.")

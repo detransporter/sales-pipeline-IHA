@@ -81,21 +81,31 @@ def delete_prospect(prospect_id: str) -> bool:
     return True
 
 
-def update_prospect_status(prospect_id: str, status: str) -> dict:
+def update_prospect_status(prospect_id: str, status: str, meeting_date: str | None = None) -> dict:
+    """
+    `meeting_date` (ISO-datum) skickas med när anroparen redan känner till det
+    (t.ex. bokning i views/meetings.py eller "Bokade möte"-utfall i replies.py)
+    så det automatiskt skapade dealet nedan får rätt datum direkt, istället för
+    att alltid landa tomt tills David manuellt fyller i det igen.
+    """
     client = get_client()
     result = client.table("prospects").update({"status": status}).eq("id", prospect_id).execute()
     prospect = result.data[0] if result.data else {}
     # Överlämning outreach → affär: bokat möte skapar ett deal i Meeting-stage
-    # (om inget redan finns). Tåligt — får aldrig blockera statusuppdateringen.
+    # (om inget redan finns). Tåligt — får aldrig blockera statusuppdateringen,
+    # men felet ska synas i loggen istället för att försvinna tyst (ett dolt
+    # skrivfel här gjorde tidigare att bokade möten kunde falla ur pipelinen
+    # helt utan att David märkte något).
     if status == "mote_bokat" and prospect:
         try:
-            _promote_to_deal(prospect)
-        except Exception:
-            pass
+            _promote_to_deal(prospect, meeting_date=meeting_date)
+        except Exception as e:
+            print(f"[supabase_client] _promote_to_deal misslyckades för "
+                  f"prospect {prospect.get('id')} ({prospect.get('bolag')}): {e}")
     return prospect
 
 
-def _promote_to_deal(prospect: dict) -> None:
+def _promote_to_deal(prospect: dict, meeting_date: str | None = None) -> None:
     """Skapa ett deal (Meeting, 45 000 kr) från en prospect vid bokat möte."""
     pid = prospect.get("id")
     if not pid or deal_exists_for_prospect(pid):
@@ -111,6 +121,7 @@ def _promote_to_deal(prospect: dict) -> None:
         "contract_value": IHA_DEFAULT_VALUE,
         "notes": (prospect.get("extra_info") or "")[:300],
         "prospect_id": pid,
+        "meeting_date": meeting_date,
     })
 
 

@@ -63,7 +63,8 @@ def render():
                 try:
                     p = prospect_options[chosen_p]
                     db.insert_meeting(p["id"], meeting_date.isoformat())
-                    db.update_prospect_status(p["id"], "mote_bokat")
+                    db.update_prospect_status(p["id"], "mote_bokat",
+                                              meeting_date=meeting_date.isoformat())
                     st.success(f"Möte bokat med {p['namn']} den {meeting_date}!")
                 except Exception as e:
                     st.error(f"Fel: {e}")
