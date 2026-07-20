@@ -90,8 +90,15 @@ def process_close(prospect_id: str) -> None:
     db.update_prospect_status(prospect_id, "inget_svar")
 
 
-def get_daily_summary() -> dict:
-    """Return counts for the daily Telegram briefing."""
+def get_daily_summary(due: list[dict] | None = None) -> dict:
+    """
+    Return counts for the daily Telegram briefing.
+
+    `due` kan skickas in av anroparen om den redan hämtat get_followups_due()
+    (t.ex. orchestrator.gather_state()) — annars hämtas den härifrån som förut.
+    Undviker att göra samma N+1-tunga fråga (en Supabase-fråga per kontakt)
+    två gånger i samma sidladdning.
+    """
     from database.supabase_client import get_client
     client = get_client()
 
@@ -101,7 +108,8 @@ def get_daily_summary() -> dict:
         s = p["status"]
         status_counts[s] = status_counts.get(s, 0) + 1
 
-    due = get_followups_due()
+    if due is None:
+        due = get_followups_due()
     followups_due = len([d for d in due if d["action"] in ("followup_1", "followup_2")])
     new_to_send = status_counts.get("ej_kontaktad", 0)
     awaiting = status_counts.get("skickad", 0) + status_counts.get("followup_1", 0)

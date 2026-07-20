@@ -36,9 +36,12 @@ ANGLE_TO_VARIANT = {"a": "variant_a", "b": "variant_b", "c": "variant_c"}
 
 def gather_state() -> dict:
     """Snabb ögonblicksbild av pipeline utan att skapa något."""
-    summary = get_daily_summary()
-    stats = db.get_pipeline_stats()
+    # Hämta get_followups_due() EN gång och återanvänd — get_daily_summary()
+    # gjorde tidigare om samma N+1-tunga fråga internt, vilket dubblerade
+    # databasarbetet varje gång "🏠 Idag" laddades.
     due = get_followups_due()
+    summary = get_daily_summary(due=due)
+    stats = db.get_pipeline_stats()
     followups = [d for d in due if d["action"] in ("followup_1", "followup_2")]
     closes = [d for d in due if d["action"] == "close"]
     new_prospects = db.get_prospects(status="ej_kontaktad", min_score=5)
