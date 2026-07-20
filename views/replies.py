@@ -263,6 +263,9 @@ def _render_followups_tab():
     if closes:
         st.divider()
         st.subheader(f"🔒 {len(closes)} att stänga (inget svar)")
+        st.caption("Stänger cadensen och schemalägger automatiskt återkontakt om "
+                   "~4 månader — dyker upp i påminnelselistan nedan istället för "
+                   "att bara försvinna ur pipeline.")
         for item in closes:
             p = item["prospect"]
             col1, col2 = st.columns([3, 1])
@@ -271,7 +274,34 @@ def _render_followups_tab():
                 if st.button("Stäng", key=f"close_{p['id']}"):
                     try:
                         process_close(p["id"])
-                        st.success("Stängd.")
+                        st.success("Stängd — återkontakt schemalagd om ~4 månader.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Fel: {e}")
+
+    # ── Återkontakt: cadenser avslutade för länge sen, redo att köras om ────────
+    # Ren påminnelselista (kräver att nasta_kontakt_datum-kolumnen finns i DB,
+    # se database/schema.sql) — inget skickas automatiskt.
+    try:
+        recontact = db.get_prospects_for_recontact()
+    except Exception:
+        recontact = []
+    if recontact:
+        st.divider()
+        st.subheader(f"🔄 {len(recontact)} redo för återkontakt")
+        st.caption("Cadensen avslutades utan svar för ett tag sen. Starta om manuellt "
+                   "om det är läge — inget skickas automatiskt.")
+        for p in recontact:
+            col1, col2 = st.columns([3, 1])
+            col1.write(f"{p.get('namn','')} — {p.get('bolag','')} · sedan "
+                       f"{(p.get('nasta_kontakt_datum') or '')[:10]}")
+            with col2:
+                if st.button("🔁 Starta om", key=f"recontact_{p['id']}",
+                             use_container_width=True):
+                    try:
+                        db.restart_cadence(p["id"])
+                        st.success(f"{p.get('bolag','Kontakten')} tillbaka i "
+                                   f"nya leads — skriv ett nytt mejl när du vill.")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Fel: {e}")

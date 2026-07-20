@@ -720,6 +720,58 @@ def deal_exists_for_prospect(prospect_id: str) -> bool:
     return bool(result.data)
 
 
+# ── Återkontakt (cadensen avslutad utan svar) ────────────────────────────────
+# Ren påminnelselista — inget skickas automatiskt. Kolumnen är ny (kräver
+# `ALTER TABLE prospects ADD COLUMN IF NOT EXISTS nasta_kontakt_datum DATE;`
+# körd manuellt i Supabase) — tålig mot att den saknas tills då.
+
+def set_next_contact_date(prospect_id: str, next_date: str | None) -> bool:
+    """Sätt/rensa återkontakt-datum (ISO-sträng, eller None för att rensa)."""
+    client = get_client()
+    try:
+        client.table("prospects").update(
+            {"nasta_kontakt_datum": next_date}).eq("id", prospect_id).execute()
+        return True
+    except Exception:
+        return False
+
+
+def get_prospects_for_recontact() -> list[dict]:
+    """Kontakter vars återkontakt-datum har passerat. [] om kolumnen saknas/fel."""
+    from datetime import datetime, timezone
+    client = get_client()
+    today = datetime.now(timezone.utc).date().isoformat()
+    try:
+        result = (
+            client.table("prospects")
+            .select("*")
+            .lte("nasta_kontakt_datum", today)
+            .not_.is_("nasta_kontakt_datum", "null")
+            .order("nasta_kontakt_datum")
+            .execute()
+        )
+        return result.data
+    except Exception:
+        return []
+
+
+def restart_cadence(prospect_id: str) -> dict:
+    """
+    Starta om cadensen manuellt för en kontakt vars återkontakt-datum passerat.
+    Sätter status tillbaka till 'ej_kontaktad' och rensar återkontakt-datumet —
+    skickar INGET, David tar nästa steg själv (samma "📧 Mejl"-flöde som ett
+    helt nytt lead).
+    """
+    client = get_client()
+    result = (
+        client.table("prospects")
+        .update({"status": "ej_kontaktad", "nasta_kontakt_datum": None})
+        .eq("id", prospect_id)
+        .execute()
+    )
+    return result.data[0] if result.data else {}
+
+
 def save_daily_reflection(raw_notes: str, summary: str) -> dict:
     client = get_client()
     result = client.table("daily_reflections").insert({

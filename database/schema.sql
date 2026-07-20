@@ -150,6 +150,13 @@ CREATE INDEX IF NOT EXISTS idx_agent_memory_created ON agent_memory(created_at D
 CREATE INDEX IF NOT EXISTS idx_inbox_replies_handled ON inbox_replies(handled);
 CREATE INDEX IF NOT EXISTS idx_inbox_replies_external ON inbox_replies(external_id);
 
+-- Återkontakt: när cadensen avslutas utan svar (Stäng-knappen i Svar &
+-- uppföljning) sätts detta automatiskt till +4 månader istället för att
+-- kontakten bara försvinner ur pipeline permanent. Ren påminnelselista —
+-- inget skickas automatiskt.
+ALTER TABLE prospects ADD COLUMN IF NOT EXISTS nasta_kontakt_datum DATE;
+CREATE INDEX IF NOT EXISTS idx_prospects_nasta_kontakt ON prospects(nasta_kontakt_datum);
+
 -- Sparad bolagssökning — söksidans pool + djuplästa bolag som EN rad (id=1),
 -- så att sökningen överlever omstart och djupläsningen kan fortsätta senare.
 CREATE TABLE IF NOT EXISTS screen_sessions (

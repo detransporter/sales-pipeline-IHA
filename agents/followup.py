@@ -85,9 +85,19 @@ def postpone_followup(prospect_id: str, action: str, until_date) -> None:
     db.mark_dm_skickad(dm["id"], at=anchor.isoformat())
 
 
+RECONTACT_MONTHS = 4  # hur långt fram "Stäng" automatiskt schemalägger återkontakt
+
+
 def process_close(prospect_id: str) -> None:
-    """Mark a prospect as inget_svar (no more follow-ups)."""
+    """
+    Mark a prospect as inget_svar (no more follow-ups just now) — men sätter
+    samtidigt ett återkontakts-datum ~4 månader fram istället för att kontakten
+    bara försvinner ur pipeline för gott. Ren påminnelse: skickar inget.
+    """
     db.update_prospect_status(prospect_id, "inget_svar")
+    next_date = (datetime.now(timezone.utc).date()
+                 + timedelta(days=30 * RECONTACT_MONTHS)).isoformat()
+    db.set_next_contact_date(prospect_id, next_date)
 
 
 def get_daily_summary(due: list[dict] | None = None) -> dict:

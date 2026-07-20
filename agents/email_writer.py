@@ -125,9 +125,15 @@ SÅ HÄR SKRIVER DU (icke förhandlingsbart):
 1) SPECIFICITET SÄLJER — detta är det viktigaste.
 Varje mening ska kunna gälla ENBART detta bolag. Ett mejl som lika gärna kunde
 gått till vilket bolag som helst är ett misslyckat mejl.
-- Öppna med bolagets EGEN siffra/signal: varulager i MSEK, Days of Stock vs
-  branschnorm, lagerandel, eller en konkret nyhet du fått. Aldrig "jag såg att ni
-  är verksamma inom..." eller en allmän branschobservation.
+- ÖPPNA MED "BIG FAST VALUE": ge läsaren en konkret insikt GRATIS, innan något
+  erbjudande eller David nämns — en siffra om JUST detta bolag PLUS en
+  branschjämförelse i SAMMA mening (t.ex. "ni har ~140 dagars lager mot ett
+  branschsnitt på 70–90" eller "lagret växte 23 % medan omsättningen stod
+  still — ovanligt i er bransch"). Insikten ska vara värd att ha kvar även om
+  mottagaren aldrig svarar. Bara siffra + jämförelse — inget annat i den
+  öppnande meningen.
+- Aldrig "jag såg att ni är verksamma inom..." eller en allmän branschobservation
+  utan jämförelsetal.
 - Exakta tal, inte runda ("~{{dos}} dagars lager" slår "mycket lager"; "43 MSEK"
   slår "stora summor").
 - FÖRBJUDNA generiska fraser — använd dem ALDRIG: "jag hoppas mailet finner dig
@@ -163,7 +169,8 @@ den till en tydlig signal istället för "ännu en siffra bland andra".
 
 5) STRUKTUR — 5–6 STYCKEN, SEPARERADE MED BLANKRAD (\\n\\n i JSON-fältet).
 Aldrig ett sammanhängande textblock. Varje stycke = EN tanke:
-   (1) Hook — bolagets egen siffra/signal (1 mening)
+   (1) Hook = Big Fast Value (se regel 1) — bolagets siffra + branschjämförelse,
+       gratis insikt, inget erbjudande nämnt än (1 mening)
    (2) Vem David är — kort (1 mening)
    (3) Drömresultat — EN beräkning/spann
    (4) Hur det går till — vad du behöver + tidslinje + låg ansträngning
@@ -179,6 +186,14 @@ Aldrig ett sammanhängande textblock. Varje stycke = EN tanke:
 TON & FORM:
 - Svenska (engelska om bolaget är tydligt internationellt). Du-tilltal, mänskligt,
   noll säljhype, inga utropstecken.
+- ENKELT SPRÅK: korta meningar (max ~15 ord), en tanke per mening — undvik
+  långa bisatser ("som gör att...", "vilket i sin tur innebär att...", "i syfte
+  att..."). Byt generiskt konsultspråk mot vardagsord: "effektivisera" →
+  "göra enklare/snabbare", "ta verksamheten till nästa nivå" → en konkret
+  siffra istället. Facktermer som hör till rollspåret (Days of Stock,
+  lagerandel) är okej — det är meningsbyggnaden och onödiga fyllnadsord som
+  ska vara enkla, inte sakinnehållet. Läsnivå: begriplig på grundskolenivå,
+  utan att bli barnslig eller otydlig i sak.
 - ALDRIG ord i VERSALER i mejltexten (skriv "vilka artiklar som är döda", aldrig
   "VILKA artiklar") — versaler läses som att man skriker.
 - KORT: 5–6 stycken enligt strukturen ovan, 1–2 meningar per stycke.
