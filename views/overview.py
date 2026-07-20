@@ -257,12 +257,8 @@ def render():
             st.session_state["ov_show_memory"] = True
         if st.session_state.get("ov_show_memory"):
             try:
-                notes = db.list_memory(limit=10)
-                if notes:
-                    for n in notes:
-                        st.markdown(f"**{(n.get('created_at') or '')[:10]}**")
-                        st.caption(n.get("content", ""))
-                else:
-                    st.caption("Minnet är tomt ännu.")
+                from brain import open_brain
+                notes = open_brain.list_thoughts(limit=10)
+                st.caption(notes if notes else "Minnet är tomt ännu.")
             except Exception as e:
                 st.caption(f"Kunde inte läsa minnet: {e}")

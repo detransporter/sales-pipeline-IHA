@@ -19,7 +19,7 @@ from database import supabase_client as db
 from integrations import linkedin_inbox as inbox
 from agents.qualifier import qualify_reply, CATEGORY_TO_STATUS
 from agents import conversation
-from brain import memory as brain
+from brain import open_brain as brain
 
 
 # ── Autosvar (out-of-office) ─────────────────────────────────────────────────

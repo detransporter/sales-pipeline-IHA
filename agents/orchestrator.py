@@ -18,7 +18,7 @@ Allt är tålig — om Open Brain saknas fortsätter körningen ändå.
 from datetime import datetime, timezone
 
 from database import supabase_client as db
-from brain import memory as brain   # eget minne i din Supabase (byt till open_brain om du vill använda Open Brain igen)
+from brain import open_brain as brain
 from agents import learning
 from agents.dm_generator import generate_dm_variants
 from agents.followup import get_followups_due, get_daily_summary
