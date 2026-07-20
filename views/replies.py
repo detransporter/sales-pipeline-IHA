@@ -8,7 +8,7 @@ from agents import inbox_watcher
 from agents.followup import get_followups_due, process_close, postpone_followup
 from database import supabase_client as db
 from views.shared import (person_link_inline, render_email_composer, log_sent_email,
-                          kategori_label)
+                          kategori_label, unique_prospect_labels)
 
 
 def _reply_subject(prospect_id: str, bolag: str) -> str:
@@ -52,7 +52,7 @@ def _render_replies_tab():
             all_p = []
             st.error(f"Kunde inte hämta kontakter: {e}")
         if all_p:
-            opt = {f"{p['namn']} — {p.get('bolag','')}": p["id"] for p in all_p}
+            opt = unique_prospect_labels(all_p, show_kategori=False)
             chosen = st.selectbox("Kontakt", list(opt.keys()), key="manual_reply_contact")
             reply_text = st.text_area("Vad de skrev", key="manual_reply_text", height=90)
             if st.button("🤖 Behandla svaret", type="primary"):
@@ -61,7 +61,7 @@ def _render_replies_tab():
                 else:
                     with st.spinner("Kvalificerar och skriver förslag..."):
                         try:
-                            saved = inbox_watcher.process_manual_reply(opt[chosen], reply_text)
+                            saved = inbox_watcher.process_manual_reply(opt[chosen]["id"], reply_text)
                             if saved.get("kategori") == "AUTOSVAR":
                                 st.info(f"🏖 Autosvar upptäckt — uppföljningen är pausad "
                                         f"till **{saved.get('_atergang', '?')}**. "

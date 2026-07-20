@@ -9,9 +9,9 @@ from agents import learning
 from agents.followup import postpone_followup
 from agents.qualifier import qualify_reply
 from database import supabase_client as db
-from views.shared import (PIPELINE_STATUSES, KONTAKT_KATEGORIER, kategori_label,
+from views.shared import (PIPELINE_STATUSES, KONTAKT_KATEGORIER,
                           cached_prospects, cached_pipeline_stats, cached_sent_emails,
-                          clear_data_cache)
+                          clear_data_cache, unique_prospect_labels)
 
 # Vilket uppföljningssteg en kontakt är på väg mot, givet nuvarande status.
 # Styr tröskeln när kontakten dyker upp igen efter en uppskjutning.
@@ -79,9 +79,7 @@ def render():
         st.dataframe(df[display_cols], use_container_width=True, hide_index=True)
 
         st.subheader("Redigera kontakt")
-        prospect_labels = {
-            f"{kategori_label(p.get('kategori'))} {p.get('namn') or ''} — {p.get('bolag','')}".strip():
-            p for p in prospects}
+        prospect_labels = unique_prospect_labels(prospects)
         chosen_label = st.selectbox("Välj kontakt att redigera",
                                     list(prospect_labels.keys()), key="edit_pick")
         chosen = prospect_labels[chosen_label]

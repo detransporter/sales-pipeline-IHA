@@ -5,7 +5,7 @@ from datetime import date
 import streamlit as st
 
 from database import supabase_client as db
-from views.shared import kategori_label
+from views.shared import kategori_label, unique_prospect_labels
 
 
 def render():
@@ -52,10 +52,7 @@ def render():
         st.subheader("Boka nytt möte")
         try:
             prospects_all = db.get_prospects()
-            prospect_options = {
-                f"{(kategori_label(p.get('kategori')) + ' · ') if p.get('kategori') else ''}"
-                f"{p.get('namn') or ''} — {p.get('bolag','')}": p
-                for p in prospects_all}
+            prospect_options = unique_prospect_labels(prospects_all)
         except Exception as e:
             st.error(f"Fel: {e}")
             prospect_options = {}

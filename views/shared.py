@@ -39,6 +39,34 @@ def kategori_label(kategori: str | None) -> str:
         return ""
     return f"{KATEGORI_BADGE.get(k, '•')} {k}"
 
+
+def unique_prospect_labels(prospects: list[dict], show_kategori: bool = True) -> dict[str, dict]:
+    """
+    Bygg "Namn — Bolag"-etiketter för en kontaktväljare, garanterat unika även
+    om två kontakter råkar heta likadant. Utan detta krockade nycklarna tyst i
+    en dict-comprehension (samma "{namn} — {bolag}" byggd separat på tre
+    ställen: meetings.py, replies.py, overview.py) och en av kontakterna blev
+    osynlig/ovalbar i väljaren.
+
+    Returnerar {etikett: kontakt-dict}. Vill du bara ha id:t: `d[label]["id"]`.
+    """
+    seen: dict[str, int] = {}
+    out: dict[str, dict] = {}
+    for p in prospects:
+        kat = f"{kategori_label(p.get('kategori'))} · " if show_kategori and p.get("kategori") else ""
+        base = f"{kat}{p.get('namn') or ''} — {p.get('bolag','')}".strip()
+        if base in seen:
+            seen[base] += 1
+            # Disambiguera med en bit av id:t — går fortfarande att känna igen,
+            # till skillnad från att bara numrera "(2)".
+            label = f"{base} ({str(p.get('id', ''))[:8] or seen[base]})"
+        else:
+            seen[base] = 1
+            label = base
+        out[label] = p
+    return out
+
+
 # Etiketter för mejlskrivarens rollspår och confidence.
 ROLL_LABEL = {"vd": "VD/Ägare", "cfo": "CFO/Ekonomichef",
               "scm": "Inköp/Supply Chain", "neutral": "Neutral (CFO-lutad)"}
