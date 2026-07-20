@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-MODEL = "claude-sonnet-4-6"
+from agents.model_config import MODEL_STANDARD as MODEL
 
 QUALIFIER_SYSTEM = """Du är en sälj-kvalificeringsassistent för Baris AB (Logistics Doctor).
 Analysera ett inkommande LinkedIn-svar och kategorisera det.
@@ -26,31 +26,45 @@ Kategorier:
 Inga förklaringar utanför JSON."""
 
 
+_FALLBACK = {
+    "kategori": "OKÄND",
+    "nästa_steg": "Kunde inte analysera svaret automatiskt — läs igenom manuellt.",
+    "förslag_svar": "",
+}
+
+
 def qualify_reply(svar_text: str) -> dict:
     """
     Analyse a LinkedIn reply and return categorisation + next step + suggested response.
-    Returns dict with kategori, nästa_steg, förslag_svar.
+    Returns dict with kategori, nästa_steg, förslag_svar. Kraschar aldrig — vid
+    API-fel eller trasig JSON returneras _FALLBACK istället (samma tåliga mönster
+    som övriga AI-anropande agenter i appen har, t.ex. lead_finder._parse_json).
     """
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    try:
+        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=400,
-        system=QUALIFIER_SYSTEM,
-        messages=[{
-            "role": "user",
-            "content": f"Analysera detta LinkedIn-svar:\n\n{svar_text}",
-        }],
-    )
+        response = client.messages.create(
+            model=MODEL,
+            max_tokens=400,
+            system=QUALIFIER_SYSTEM,
+            messages=[{
+                "role": "user",
+                "content": f"Analysera detta LinkedIn-svar:\n\n{svar_text}",
+            }],
+        )
 
-    raw = response.content[0].text.strip()
-    if "```" in raw:
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
+        raw = response.content[0].text.strip()
+        if "```" in raw:
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+            raw = raw.strip()
 
-    return json.loads(raw)
+        data = json.loads(raw)
+        # Fyll ut ev. saknade nycklar så anropare alltid kan lita på formen.
+        return {**_FALLBACK, **data}
+    except Exception:
+        return dict(_FALLBACK)
 
 
 # Mapping from qualifier category to Supabase status

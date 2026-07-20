@@ -24,7 +24,7 @@ from integrations import apify_research as apify
 
 load_dotenv()
 
-MODEL = "claude-sonnet-4-6"
+from agents.model_config import MODEL_STANDARD as MODEL
 
 # Gemensam ICP-beskrivning som båda lägena delar.
 ICP_BLOCK = """Produkten heter IHA — ett lättviktigt SaaS-verktyg för "Inventory Health Analysis" som visar

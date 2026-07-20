@@ -24,9 +24,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# OBS: kommentaren nämner "Fable 5" från A/B-testet 2026-07-08, men konstanten
+# nedan pekar på MODEL_QUALITY (claude-sonnet-5) — två olika modeller, olika
+# pris. Flaggat åt David; inte ändrat här eftersom det är ett medvetet
+# affärsbeslut, inte en refaktoreringsfråga.
 # Fable 5 efter A/B-test 2026-07-08 (samma beslut som IHA:s outreach-roll):
 # vassare hook, bättre regelefterlevnad, mänskligare ton. ~1,50 kr/mejl.
-MODEL = "claude-sonnet-5"
+from agents.model_config import MODEL_QUALITY as MODEL
 
 SIGNATURE = (
     "Vänliga hälsningar,\n"

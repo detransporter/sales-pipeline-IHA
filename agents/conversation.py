@@ -30,7 +30,7 @@ from database import supabase_client as db
 
 load_dotenv()
 
-MODEL = "claude-sonnet-4-6"
+from agents.model_config import MODEL_STANDARD as MODEL
 
 # Trappans ordning — används för att validera att vi inte hoppar för långt.
 STAGE_ORDER = [

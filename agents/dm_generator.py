@@ -3,9 +3,9 @@ import json
 import anthropic
 from dotenv import load_dotenv
 
-load_dotenv()
+from agents.model_config import MODEL_STANDARD as MODEL
 
-MODEL = "claude-sonnet-4-6"
+load_dotenv()
 
 SYSTEM_PROMPT = """Du skriver det ALLRA FÖRSTA LinkedIn-meddelandet åt David Leifsson (Logistics Doctor).
 

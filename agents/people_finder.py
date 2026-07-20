@@ -49,10 +49,11 @@ except Exception:  # pragma: no cover
 
 load_dotenv()
 
-MODEL = "claude-sonnet-4-6"          # webbsök (web_search-verktyget kräver Sonnet)
-# Själva läsningen är enkel texttolkning (namn+titel ur sidtext) — Haiku klarar
-# den lika bra till en tredjedel av kostnaden. Volymdrivaren i bulk-körningar.
-READ_MODEL = "claude-haiku-4-5"
+from agents.model_config import MODEL_STANDARD as MODEL, MODEL_FAST as READ_MODEL
+# MODEL: webbsök (web_search-verktyget kräver Sonnet).
+# READ_MODEL: själva läsningen är enkel texttolkning (namn+titel ur sidtext) —
+# Haiku klarar den lika bra till en tredjedel av kostnaden. Volymdrivaren i
+# bulk-körningar.
 
 # Undersidor i sannolikhetsordning — samma sidor David själv kollar manuellt.
 # Tom sträng = startsidan, som sista utväg.

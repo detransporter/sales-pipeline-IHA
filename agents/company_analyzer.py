@@ -20,11 +20,9 @@ from dotenv import load_dotenv
 
 from integrations import apify_research as apify
 from agents import iha_metrics
+from agents.model_config import MODEL_QUALITY as MODEL, MODEL_FAST as CLASSIFY_MODEL
 
 load_dotenv()
-
-MODEL = "claude-sonnet-5"
-CLASSIFY_MODEL = "claude-haiku-4-5"   # billig klassning av affärsmodell
 
 
 def classify_business_model(bolag: str, bransch: str = "", website_text: str = "") -> str:

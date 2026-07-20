@@ -19,8 +19,7 @@ import streamlit as st
 from brain import open_brain
 from database import supabase_client as db
 from views import shared
-
-MODEL = "claude-opus-4-6"   # dagstart + chatt (samma som i Sales.py)
+from agents.model_config import MODEL_COACH as MODEL
 
 DAVID_AGENT_SYSTEM = """Du är David Leifssons personliga assistent. Han är grundare av SCM International AB och Logistics Doctor i Västerås.
 
