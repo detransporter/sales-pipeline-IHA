@@ -279,10 +279,12 @@ def load_orgnr_list(path: str) -> list[str]:
 
 
 def load_orgnr_from_db() -> list[str]:
-    from supabase import create_client
-    sb = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
-    schema = os.getenv("SUPABASE_SCHEMA", "sales_chief")
-    r = sb.schema(schema).table("lead_suggestions").select("orgnr").not_.is_("orgnr", "null").execute()
+    # Återanvänd samma klient/schema-inställning som resten av appen istället
+    # för en egen Supabase-koppling — annars märks inte ändringar i
+    # database/supabase_client.py (schema, inloggning) här.
+    from database.supabase_client import get_client
+    sb = get_client()
+    r = sb.table("lead_suggestions").select("orgnr").not_.is_("orgnr", "null").execute()
     result = []
     for row in r.data:
         v = str(row["orgnr"]).strip().replace("-", "").replace(" ", "")
