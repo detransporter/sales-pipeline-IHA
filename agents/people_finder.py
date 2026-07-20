@@ -34,6 +34,11 @@ import requests
 import anthropic
 from dotenv import load_dotenv
 
+# Avkodare för Cloudflares mejlskydd (samma XOR-avkodning som e-postskraparen
+# redan använder) — utan den ser Claude bara platshållartexten "[email
+# protected]" på skyddade sajter (Nordcon-fallet: mejlet syntes aldrig).
+from integrations.apify_research import _decode_cfemail
+
 # BeautifulSoup ger strukturbevarande text (namn/titel/mejl hålls ihop rad för
 # rad, bild-alt-texter följer med). Tålig import — utan bs4 körs regex-strip.
 try:
@@ -252,6 +257,13 @@ def _fetch_page_text(url: str, max_chars: int = 4000) -> str:
             alt = (img.get("alt") or "").strip()
             if 3 < len(alt) < 120:
                 img.replace_with(f" [bild: {alt}] ")
+        # Cloudflare-mejlskydd: avkoda INNAN text extraheras, annars ser Claude
+        # bara platshållartexten "[email protected]" i klartext (precis det som
+        # hände på nordcon.se — mejlet syntes på sidan men gick aldrig att läsa).
+        for cf in soup.find_all(attrs={"data-cfemail": True}):
+            decoded = _decode_cfemail(cf["data-cfemail"])
+            if decoded and "@" in decoded:
+                cf.replace_with(decoded)
         # Mejladresser ligger ofta bara i mailto-länken, inte i länktexten.
         for a in soup.find_all("a", href=True):
             href = a["href"]
@@ -259,6 +271,10 @@ def _fetch_page_text(url: str, max_chars: int = 4000) -> str:
                 addr = href[7:].split("?")[0].strip()
                 if addr and addr not in a.get_text():
                     a.append(f" <{addr}>")
+            elif "/cdn-cgi/l/email-protection#" in href:
+                decoded = _decode_cfemail(href.split("#")[-1])
+                if decoded and "@" in decoded and decoded not in a.get_text():
+                    a.append(f" <{decoded}>")
         lines = [ln.strip() for ln in soup.get_text(separator="\n").splitlines()]
         return "\n".join(ln for ln in lines if ln)[:max_chars]
     except Exception:
