@@ -141,10 +141,18 @@ def _log(msg: str) -> None:
 
 
 def _normalize_url(url: str) -> str:
+    """
+    Normalisera + uppgradera till https. Sparade leads har ibland http:// från
+    äldre gissningar — många moderna sajter (Cloudflare m.fl.) svarar inte alls
+    på ren http, vilket gav 8 anslutningsfel i rad innan sökningen gav upp
+    (Olle Svensson-fallet: 82 sek åtgången till stor del på just detta).
+    """
     url = (url or "").strip()
     if not url:
         return ""
-    if not url.startswith("http"):
+    if url.startswith("http://"):
+        url = "https://" + url[len("http://"):]
+    elif not url.startswith("http"):
         url = "https://" + url
     return url.rstrip("/")
 
@@ -438,43 +446,10 @@ def find_person(bolag: str, website: str = "", target_role: str = "",
                     if len(t) >= MIN_PAGE_CHARS:
                         pages.append((url, t))
 
-    # 3) Direkthämtning gav inget (IP-blockad eller JS-sajt) → sista utväg:
-    #    rendera sidorna via Apify (riktiga webbläsare + proxy, andra IP:n).
-    #    Kostar en liten slant krediter och körs därför BARA när gratisvägen
-    #    är helt stängd. Olle Svensson-fallet: ollesab.com blockerar molnets IP.
-    if not pages:
-        target = base or discovered_site
-        if target:
-            try:
-                from integrations.apify_research import (_crawl_rendered,
-                                                         _soup_text, is_configured,
-                                                         remaining_usage_usd)
-                # Slut på krediter → Apify skulle ändå bara vänta ut sin timeout
-                # (upp till 5 min) innan den ger upp. Hoppa över direkt i stället.
-                _credits = remaining_usage_usd()
-                if is_configured() and (_credits is None or _credits >= 0.10):
-                    # Bara 3 sidor — varje renderad sida kostar krediter.
-                    urls = [f"{target}/{p}" if p else target
-                            for p in ("kontakt", "contact", "")]
-                    blocks = _crawl_rendered(urls, max_pages=3)
-                    texts = []
-                    for b in blocks:
-                        t = (_soup_text(b, 3000) if "<" in (b or "")[:300]
-                             else (b or "").strip()[:3000])
-                        if len(t) >= 200:
-                            texts.append(t)
-                    if texts:
-                        pages.append((f"{target} (renderad via Apify)",
-                                      "\n\n".join(texts)[:12000]))
-                        _log(f"[people_finder] {bolag}: direkthämtning blockerad — "
-                             f"läste {len(texts)} renderade sidor via Apify i stället")
-                    else:
-                        # Tyst miss är värst — logga varför (ofta: krediterna slut).
-                        from integrations.apify_research import LAST_APIFY_ERROR
-                        _log(f"[people_finder] {bolag}: Apify-rendering gav inget"
-                             + (f" — {LAST_APIFY_ERROR}" if LAST_APIFY_ERROR else ""))
-            except Exception as e:
-                _log(f"[people_finder] {bolag}: Apify-rendering misslyckades: {e}")
+    # OBS: Apify-rendering som reserv för IP-blockerade sajter provades men
+    # stängdes av på Davids begäran — även nedsänkt till 90s tak kändes det
+    # för segt i vardagen. Blockerade sajter (t.ex. ollesab.com) ger nu
+    # "hittade ingen" snabbt; David klistrar in dem manuellt via ✏️ Kontakt.
 
     if not pages:
         _log(f"[people_finder] {bolag}: ingen läsbar sida hittades "
