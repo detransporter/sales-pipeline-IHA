@@ -109,23 +109,31 @@ def render():
                     index=(KONTAKT_KATEGORIER.index(_cur_kat)
                            if _cur_kat in KONTAKT_KATEGORIER else 0))
                 if st.form_submit_button("💾 Spara ändringar", type="primary"):
-                    try:
-                        fields = {
-                            "namn": e_namn.strip(),
-                            "titel": e_titel.strip(),
-                            "bolag": e_bolag.strip(),
-                            "bransch": e_bransch.strip(),
-                            "email": e_email.strip(),
-                            "linkedin_url": e_li.strip(),
-                            "website": e_website.strip(),
-                            "kategori": e_kategori,
-                        }
-                        db.update_prospect(chosen["id"], {k: v for k, v in fields.items() if v})
-                        clear_data_cache()
-                        st.success("Sparat!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Fel: {e}")
+                    _namn_ny = e_namn.strip()
+                    if not _namn_ny:
+                        st.error("Namn kan inte vara tomt.")
+                    else:
+                        try:
+                            fields = {
+                                "namn": _namn_ny,
+                                "titel": e_titel.strip(),
+                                "bolag": e_bolag.strip(),
+                                "bransch": e_bransch.strip(),
+                                "email": e_email.strip(),
+                                "linkedin_url": e_li.strip(),
+                                "website": e_website.strip(),
+                                "kategori": e_kategori,
+                            }
+                            # Skicka ALLA fält, även de som rensats till tomt sträng.
+                            # Tidigare filtrerades tomma värden bort ({k:v if v}) så
+                            # ett fält gick att SÄTTA men aldrig RENSA — det gamla
+                            # (felaktiga) värdet låg kvar i databasen permanent.
+                            db.update_prospect(chosen["id"], fields)
+                            clear_data_cache()
+                            st.success("Sparat!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Fel: {e}")
 
         with tab_status:
             cur = chosen.get("status", "ej_kontaktad")
