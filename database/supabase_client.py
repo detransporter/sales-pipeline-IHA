@@ -610,7 +610,10 @@ def get_inbox_replies(handled: bool = False) -> list[dict]:
     client = get_client()
     result = (
         client.table("inbox_replies")
-        .select("*, prospects(namn, bolag, titel)")
+        # email/kategori/linkedin_url MÅSTE vara med — views/replies.py läser dem
+        # från den inbäddade prospects-relationen för att visa "Skicka via mejl"
+        # och kategori-badgen. Saknades tidigare → båda visades aldrig.
+        .select("*, prospects(id, namn, bolag, titel, email, kategori, linkedin_url)")
         .eq("handled", handled)
         .order("received_at", desc=True)
         .execute()
