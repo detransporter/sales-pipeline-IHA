@@ -10,6 +10,8 @@ COLUMN_MAP = {
     "linkedin_url": ["linkedin_url", "linkedin", "url", "profil", "profile"],
     "telefon": ["telefon", "phone", "tel", "mobile", "mobil"],
     "extra_info": ["extra_info", "notes", "anteckningar", "info", "kommentar"],
+    "email": ["email", "e-post", "e_post", "epost", "mejl", "mail", "e-mail"],
+    "website": ["website", "hemsida", "webbplats", "webbsida", "url_hemsida", "web"],
 }
 
 REQUIRED = ["namn", "titel", "bolag", "bransch"]
@@ -68,7 +70,7 @@ def parse_excel(file) -> tuple[pd.DataFrame, list[str]]:
         errors.append(f"Varning: {dropped} rader utan namn ignorerades.")
 
     # Ensure optional columns exist
-    for col in ["linkedin_url", "telefon", "extra_info"]:
+    for col in ["linkedin_url", "telefon", "extra_info", "email", "website"]:
         if col not in df.columns:
             df[col] = ""
 
@@ -91,6 +93,8 @@ def dataframe_to_prospect_records(df: pd.DataFrame) -> list[dict]:
             "linkedin_url": str(row.get("linkedin_url", "")).strip(),
             "telefon": str(row.get("telefon", "")).strip(),
             "extra_info": str(row.get("extra_info", "")).strip(),
+            "email": str(row.get("email", "")).strip(),
+            "website": str(row.get("website", "")).strip(),
             "status": "ej_kontaktad",
         })
     return records

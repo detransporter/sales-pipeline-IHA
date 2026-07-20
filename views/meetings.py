@@ -31,10 +31,14 @@ def render():
                 _pre = f"{_kb} · " if _kb else ""
                 with st.expander(f"{m['datum']} — {_pre}{prospect_name} @ {bolag} [{m['status']}]"):
                     notes = st.text_area("Anteckningar", value=m.get("anteckningar") or "", key=f"notes_{m['id']}")
+                    _mstatuses = ["bokad", "genomford", "avbokad"]
                     new_status = st.selectbox(
                         "Status",
-                        ["bokad", "genomford", "avbokad"],
-                        index=["bokad", "genomford", "avbokad"].index(m["status"]),
+                        _mstatuses,
+                        # Skydd mot okänt statusvärde (manuell DB-ändring, framtida
+                        # migrering) — samma mönster som pipeline.py/overview.py.
+                        # Utan detta kraschade hela sidan med ett ofångat ValueError.
+                        index=_mstatuses.index(m["status"]) if m["status"] in _mstatuses else 0,
                         key=f"mstatus_{m['id']}",
                     )
                     if st.button("💾 Spara", key=f"save_meeting_{m['id']}"):
