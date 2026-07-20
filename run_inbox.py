@@ -16,7 +16,7 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from agents.inbox_watcher import check_inbox, build_telegram_text
-from telegram.notify import send_telegram
+from tg_bot.notify import send_telegram
 
 
 def main() -> None:

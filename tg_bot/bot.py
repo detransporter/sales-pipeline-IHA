@@ -1,6 +1,10 @@
 """
 Telegram bot för LinkedIn DM Agent.
-Kör separat: python telegram/bot.py
+Kör separat: python tg_bot/bot.py
+
+(Mappen heter tg_bot, inte telegram — en mapp som hette exakt som det
+installerade paketet python-telegram-bot skuggade paketet vid import och
+gjorde att boten aldrig kunde starta. Döpt om för att fixa det.)
 
 Kommandon:
   /svar [namn] ja|nej       — Markera svar
@@ -17,6 +21,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import asyncio
+import functools
 import logging
 from datetime import datetime, timezone
 
@@ -50,8 +55,29 @@ def _get_prospect(name_fragment: str) -> dict | None:
     return db.get_prospect_by_name(name_fragment)
 
 
+def _require_authorized(handler):
+    """
+    Blockerar kommandon från alla utom TELEGRAM_CHAT_ID.
+
+    CHAT_ID lästes tidigare bara för UTGÅENDE påminnelser — ingen handler
+    kontrollerade vem som SKICKADE ett kommando. Läckt bot-token räckte då
+    för att trigga en full säljkörning (/chef) eller ändra pipeline-status.
+    Saknas CHAT_ID (ej konfigurerat) nekas allt — säkrast att stänga igen
+    än att av misstag stå öppen.
+    """
+    @functools.wraps(handler)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        sender_id = str(update.effective_chat.id) if update.effective_chat else None
+        if not CHAT_ID or sender_id != str(CHAT_ID):
+            logger.warning(f"Obehörigt kommando avvisat från chat_id={sender_id}")
+            return  # Tyst avvisning — svarar inte, avslöjar inte att boten finns
+        return await handler(update, context)
+    return wrapper
+
+
 # ── Command handlers ───────────────────────────────────────────────────────
 
+@_require_authorized
 async def cmd_svar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/svar [namn] ja|nej"""
     args = context.args
@@ -84,6 +110,7 @@ async def cmd_svar(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await _reply(update, f"❌ *{prospect['namn']}* markerad som `svar_nej`.")
 
 
+@_require_authorized
 async def cmd_mote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/mote [namn] [YYYY-MM-DD]"""
     args = context.args
@@ -110,6 +137,7 @@ async def cmd_mote(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _reply(update, f"📅 Möte bokat med *{prospect['namn']}* den {datum}!")
 
 
+@_require_authorized
 async def cmd_idag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/idag — Dagens uppföljningslista"""
     try:
@@ -134,6 +162,7 @@ async def cmd_idag(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _reply(update, text)
 
 
+@_require_authorized
 async def cmd_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/pipeline — Pipeline-sammanfattning"""
     try:
@@ -152,6 +181,7 @@ async def cmd_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await _reply(update, text)
 
 
+@_require_authorized
 async def cmd_dm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/dm [namn] — Generera DM direkt"""
     if not context.args:
@@ -186,6 +216,7 @@ async def cmd_dm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _reply(update, text)
 
 
+@_require_authorized
 async def cmd_chef(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/chef — Kör Sales Chief (orchestratorn) nu och förbered dagens jobb."""
     await _reply(update, "🧠 Sales Chief jobbar... (förbereder DM, uppföljningar & leads)")
@@ -199,6 +230,7 @@ async def cmd_chef(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _reply(update, result["telegram"])
 
 
+@_require_authorized
 async def cmd_inkorg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/inkorg — Kolla LinkedIn-svar nu och förbered förslag."""
     await _reply(update, "💬 Kollar inkorgen...")

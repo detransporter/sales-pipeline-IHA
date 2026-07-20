@@ -16,7 +16,7 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from agents.orchestrator import run_day
-from telegram.notify import send_telegram
+from tg_bot.notify import send_telegram
 
 
 def main() -> None:

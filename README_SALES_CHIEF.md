@@ -45,7 +45,7 @@ Då får du en färdig prioriteringslista i Telegram varje morgon (om `TELEGRAM_
 och `TELEGRAM_CHAT_ID` finns i `.env`).
 
 ## Köra från Telegram
-Starta boten (`python telegram/bot.py`) och skriv **/chef** när du vill — då kör Sales Chief
+Starta boten (`python tg_bot/bot.py`) och skriv **/chef** när du vill — då kör Sales Chief
 direkt och svarar med dagens lista i chatten.
 
 ## Köra manuellt i terminalen
