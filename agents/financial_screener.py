@@ -34,6 +34,7 @@ BRANSCH_KEYWORDS: dict[str, list[str]] = {
     "Medtech":                            ["medicinteknik", "medicintekniska produkter", "medtech tillverkning"],
     "Förpackning":                        ["förpackningstillverkning", "förpackningsindustri", "emballage"],
     "Elektronik/kontraktstillverkning":   ["elektroniktillverkning", "kontraktstillverkning", "legotillverkning elektronik"],
+    "Verktygshandel (fordon & maskiner)": ["verktygsmaskiner", "handverktyg tillverkning", "specialverktyg fordon"],
     "Grossist (generellt)":               ["grossist", "partihandel", "grossisthandel"],
     "Bygggrossist":                       ["byggvaruhandel", "byggmaterial grossist", "bygggrossist"],
     "Distribution/partihandel":           ["distribution", "partihandel", "import grossist"],
@@ -73,6 +74,10 @@ BRANSCH_SNI: dict[str, list[str]] = {
     "Medtech": ["325", "266"],
     "Förpackning": ["17", "222"],
     "Elektronik/kontraktstillverkning": ["26", "27"],
+    # Wallmek i Kungälv AB (SNI 28240) + partihandel med verktygsmaskiner (46620) —
+    # specialverktyg/verkstadsutrustning för fordon, INTE tunga maskiner (jordbruk/
+    # gruv/bygg ligger under 46610/46630, en annan kundprofil trots liknande ekonomi).
+    "Verktygshandel (fordon & maskiner)": ["2824", "4662"],
     "Grossist (generellt)": ["46"],
     "Bygggrossist": ["466", "4673", "4674"],
     "Distribution/partihandel": ["46"],
