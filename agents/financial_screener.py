@@ -35,6 +35,7 @@ BRANSCH_KEYWORDS: dict[str, list[str]] = {
     "Förpackning":                        ["förpackningstillverkning", "förpackningsindustri", "emballage"],
     "Elektronik/kontraktstillverkning":   ["elektroniktillverkning", "kontraktstillverkning", "legotillverkning elektronik"],
     "Verktygshandel (fordon & maskiner)": ["verktygsmaskiner", "handverktyg tillverkning", "specialverktyg fordon"],
+    "Maskinhandel (jordbruk/gruv/bygg)":  ["jordbruksmaskiner", "entreprenadmaskiner", "anläggningsmaskiner"],
     "Grossist (generellt)":               ["grossist", "partihandel", "grossisthandel"],
     "Bygggrossist":                       ["byggvaruhandel", "byggmaterial grossist", "bygggrossist"],
     "Distribution/partihandel":           ["distribution", "partihandel", "import grossist"],
@@ -78,6 +79,11 @@ BRANSCH_SNI: dict[str, list[str]] = {
     # specialverktyg/verkstadsutrustning för fordon, INTE tunga maskiner (jordbruk/
     # gruv/bygg ligger under 46610/46630, en annan kundprofil trots liknande ekonomi).
     "Verktygshandel (fordon & maskiner)": ["2824", "4662"],
+    # Partihandel med jordbruksmaskiner (46610) samt gruv-/bygg-/anläggningsmaskiner
+    # (46630) — samma lagertunga ekonomi som verktygshandeln men tunga maskiner till
+    # lantbruk/entreprenad, en annan kundprofil. Live-testad juli 2026: 19/31 bolag
+    # kvalificerade (lagerandel 20-58%), betydligt rikare nisch än verktygshandeln.
+    "Maskinhandel (jordbruk/gruv/bygg)": ["4661", "4663"],
     "Grossist (generellt)": ["46"],
     "Bygggrossist": ["466", "4673", "4674"],
     "Distribution/partihandel": ["46"],
