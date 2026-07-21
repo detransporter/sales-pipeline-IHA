@@ -326,15 +326,39 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
             if website:
                 st.markdown(f"🌐 [Företagets hemsida]({website})")
             # Visa bara PERSONLIGA adresser — info@/order@ m.fl. är brus för David.
-            # Sparad adress märks med personens titel så man ser vem den tillhör.
+            # Märk VARJE adress med vems den är, om vi kan avgöra det:
+            #  1. Exakt träff mot en tidigare hittad kandidat (namn+titel+mejl
+            #     från en personsökning) — säkrast källa.
+            #  2. Exakt träff mot leadets SPARADE person/mejl.
+            #  3. Namnfragment i adressens lokaldel matchar sparade personens
+            #     namn (t.ex. "fredric@..." mot "Per Fredric Hakfelt") — en
+            #     skrapad adresslista har annars ingen som helst namnkoppling.
             _personal = [e for e in emails if _personal_email(e)]
             _saved = (l.get("email") or "").strip().lower()
             _t = (l.get("titel") or "").strip()
+            _namn = (l.get("namn") or "").strip()
+            _namndelar = [p.lower() for p in _namn.split() if len(p) > 2]
+
+            _titel_per_mejl = {
+                (k.get("email") or "").strip().lower(): (k.get("titel") or "").strip()
+                for k in st.session_state.get(f"found_people_{lid}", [])
+                if k.get("email")
+            }
+            if _t:
+                _titel_per_mejl.setdefault(_saved, _t)
+
+            def _email_label(e: str) -> str:
+                key = e.strip().lower()
+                titel = _titel_per_mejl.get(key, "")
+                if titel:
+                    return f"[{e}](mailto:{e}) _({titel})_"
+                local = key.split("@")[0].replace(".", " ").replace("-", " ")
+                if _t and any(part in local for part in _namndelar):
+                    return f"[{e}](mailto:{e}) _({_t}?)_"
+                return f"[{e}](mailto:{e})"
+
             if _personal:
-                links = " · ".join(
-                    f"[{e}](mailto:{e})"
-                    + (f" _({_t})_" if _t and e.strip().lower() == _saved else "")
-                    for e in _personal[:4])
+                links = " · ".join(_email_label(e) for e in _personal[:4])
                 st.markdown(f"✉️ {links}")
                 st.code(_personal[0], language=None)
             elif guessed:
