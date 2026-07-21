@@ -558,17 +558,19 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                 _phones = _apify._extract_phones(txt)
                 p_email = _mails[0].strip().lower() if _mails else ""
                 p_tel = _phones[0] if _phones else ""
-                # Namn: bara om leaden saknar person. Ta första rad utan @ och utan
-                # långt sifferblock (2–5 ord), som ser ut som ett namn.
+                # Namn: en manuell inklistring är alltid avsiktlig, så den vinner
+                # även om leadet redan har ett (t.ex. registrets VD-namn) — annars
+                # sparas David:s korrekta mejl/telefon men det gamla, fel namnet
+                # ligger kvar. Ta första rad utan @ och utan långt sifferblock
+                # (2–5 ord), som ser ut som ett namn.
                 p_namn = ""
-                if not (l.get("namn") or "").strip():
-                    for line in txt.splitlines():
-                        # Dra bort ev. roll efter komma: "Tony Ekström, VD" → "Tony Ekström"
-                        cand = line.strip().split(",")[0].strip()
-                        if (cand and "@" not in cand and not re.search(r"\d{4,}", cand)
-                                and 2 <= len(cand.split()) <= 4):
-                            p_namn = cand
-                            break
+                for line in txt.splitlines():
+                    # Dra bort ev. roll efter komma: "Tony Ekström, VD" → "Tony Ekström"
+                    cand = line.strip().split(",")[0].strip()
+                    if (cand and "@" not in cand and not re.search(r"\d{4,}", cand)
+                            and 2 <= len(cand.split()) <= 4):
+                        p_namn = cand
+                        break
                 if not (p_email or p_tel or p_namn):
                     st.warning("Hittade varken namn, e-post eller telefon i texten.")
                 else:
@@ -576,11 +578,21 @@ def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
                         _old_n = (l.get("namn") or "").strip()
                         if p_namn and _brain and _brain.is_configured():
                             try:
-                                _brain.capture_thought(
-                                    (f"[people_finder-lärdom] {l.get('bolag','')} "
-                                     f"({l.get('bransch','')}): agenten hade ingen person, "
-                                     f"David klistrade in \"{p_namn}\" — leta djupare på "
-                                     "Om oss/Ledning/Kontakt för liknande bolag.")[:400])
+                                if _old_n and _old_n != p_namn:
+                                    _thought = (
+                                        f"[people_finder-lärdom] {l.get('bolag','')} "
+                                        f"({l.get('bransch','')}): agenten hade sparat "
+                                        f"\"{_old_n}\" (troligen bolagsregistrets VD), men "
+                                        f"David rättade till \"{p_namn}\" efter manuell "
+                                        "koll på hemsidan — leta djupare på Kontakt/"
+                                        "Ledning-sidor, lita inte på registrets VD-namn.")
+                                else:
+                                    _thought = (
+                                        f"[people_finder-lärdom] {l.get('bolag','')} "
+                                        f"({l.get('bransch','')}): agenten hade ingen person, "
+                                        f"David klistrade in \"{p_namn}\" — leta djupare på "
+                                        "Om oss/Ledning/Kontakt för liknande bolag.")
+                                _brain.capture_thought(_thought[:400])
                             except Exception:
                                 pass
                         if p_namn:
