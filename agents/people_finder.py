@@ -345,7 +345,11 @@ def _search_contact_page(bolag: str) -> str:
         f'Returnera ENDAST JSON: {{"url": "https://... eller tom sträng"}}'
     )
     try:
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        # timeout=30: SDK:ns standard är 10 MIN per försök — är Anthropics API
+        # tillfälligt överbelastat (529) kan ett enda bolag annars hänga i flera
+        # minuter och blockera hela bulk-kön bakom sig. Ett bolag som inte svarar
+        # inom 30s ska ge upp och gå vidare, inte frysa resten av batchen.
+        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"), timeout=30.0)
         tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 3}]
         messages = [{"role": "user", "content": user}]
         resp = client.messages.create(model=MODEL, max_tokens=500,
@@ -383,7 +387,9 @@ def _read_pages(bolag: str, bransch: str, target_role: str,
         f"Identifiera bästa person. Returnera JSON."
     )
     try:
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        # Samma resonemang som i _search_contact_page — bunta tiden, blockera
+        # aldrig hela batchen på ett enda bolag.
+        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"), timeout=30.0)
         response = client.messages.create(
             model=READ_MODEL,
             max_tokens=600,
