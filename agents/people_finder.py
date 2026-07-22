@@ -69,7 +69,11 @@ CANDIDATE_PATHS = (
 
 # Tak per bolag så en bulk-körning på 20+ leads inte springer iväg:
 MAX_FETCHES = 8      # max antal HTTP-hämtningar
-MAX_PAGES_TO_READ = 3  # max antal sidor som skickas till Claude (en läsning totalt)
+# 5 (inte 3) — annars kan tre generiska sidor (t.ex. kontakt/om-oss/ledning
+# utan namngiven person) fylla hela kvoten och tränga ut medarbetare-sidan
+# som faktiskt hade svaret, trots att fetch-budgeten inte alls var slut.
+# Billigt: Haiku (READ_MODEL) läser alla sidor i EN läsning.
+MAX_PAGES_TO_READ = 5
 MIN_PAGE_CHARS = 400   # under detta räknas sidan som tom (JS-skal, 404-sida)
 
 
@@ -199,7 +203,7 @@ def _fetch_html(url: str) -> str:
 
 # Länkord som pekar mot personer — starka (nästan alltid rätt) före svaga.
 _LINK_STRONG = ("ledning", "ledningsgrupp", "styrelse", "medarbetare", "personal",
-                "team", "management", "leadership", "kontakt", "contact")
+                "team", "management", "leadership", "kontakt", "contact", "jobbar")
 _LINK_WEAK = ("om-oss", "om_oss", "omoss", "about", "organisation", "om-foretaget",
               "foretaget", "people", "staff")
 
@@ -235,7 +239,13 @@ def _discover_team_links(base: str, html: str, max_links: int = 5) -> list[str]:
 
 def _fetch_page_text(url: str, max_chars: int = 4000) -> str:
     """Hämta en sida och ge ren, strukturbevarande text. Tom sträng vid fel."""
-    html = _fetch_html(url)
+    return _extract_page_text(_fetch_html(url), max_chars)
+
+
+def _extract_page_text(html: str, max_chars: int = 4000) -> str:
+    """Samma extraktion som _fetch_page_text, men på redan hämtad HTML — så
+    att en sida bara behöver hämtas EN gång och återanvändas både för text
+    (till Claude) och länkupptäckt (_discover_team_links) på samma sida."""
     if not html:
         return ""
     if not BeautifulSoup:
@@ -433,13 +443,30 @@ def find_person(bolag: str, website: str = "", target_role: str = "",
         candidates = _discover_team_links(base, home_html)
         candidates += [f"{base}/{p}" if p else base for p in _order_paths(strategy)
                        if (f"{base}/{p}" if p else base) not in candidates]
-        for url in candidates:
+        seen = set(candidates) | {base}
+        i = 0
+        while i < len(candidates):
             if fetches >= MAX_FETCHES or len(pages) >= MAX_PAGES_TO_READ:
                 break
+            url = candidates[i]
+            i += 1
             fetches += 1
-            text = _fetch_page_text(url)
+            html = _fetch_html(url)
+            text = _extract_page_text(html)
             if len(text) >= MIN_PAGE_CHARS:
                 pages.append((url, text))
+            # Följ EN nivå till på just denna sida (t.ex. /om-oss länkar vidare
+            # till /om-oss/vi-som-jobbar-har, en typisk svensk SME-struktur).
+            # Ingen extra hämtning — vi återanvänder redan hämtad HTML. Sätts in
+            # FÖRE de kvarvarande hårdkodade gissningarna i kön (inte sist) —
+            # en riktig länk vi hittade på en redan lästa sida är ett starkare
+            # signal än blinda gissningar och ska inte trängas ut av dem när
+            # hämtningsbudgeten (MAX_FETCHES) tar slut.
+            if len(pages) < MAX_PAGES_TO_READ and fetches < MAX_FETCHES:
+                subs = [s for s in _discover_team_links(url, html, max_links=3)
+                        if s not in seen]
+                seen.update(subs)
+                candidates[i:i] = subs
 
     # 2) Ingen undersida gav substans → web search får peka ut rätt sajt/sida.
     #    Viktigt när hemsida saknas på leadet och varumärket skiljer sig från
@@ -452,22 +479,31 @@ def find_person(bolag: str, website: str = "", target_role: str = "",
             root = f"{p.scheme}://{p.netloc}"
             if not base:
                 discovered_site = root
-            text = _fetch_page_text(found_url)
+            found_html = _fetch_html(found_url)
+            text = _extract_page_text(found_html)
             if len(text) >= MIN_PAGE_CHARS:
                 pages.append((found_url, text))
-            # Sökningen kan ha gett startsidan — följ dess menylänkar också.
+            # Följ menylänkar både på startsidan OCH på den hittade sidan
+            # själv (t.ex. en om-oss-sida länkar vidare till en undersida med
+            # personerna — samma tvånivå-mönster som i steg 1 ovan).
+            seen_sub = {found_url.rstrip("/")}
+            sub_links = list(_discover_team_links(found_url, found_html))
             if len(pages) < MAX_PAGES_TO_READ and fetches < MAX_FETCHES:
                 fetches += 1
                 home_html = _fetch_html(root)
-                for url in _discover_team_links(root, home_html):
-                    if fetches >= MAX_FETCHES or len(pages) >= MAX_PAGES_TO_READ:
-                        break
-                    if url.rstrip("/") == found_url.rstrip("/"):
-                        continue
-                    fetches += 1
-                    t = _fetch_page_text(url)
-                    if len(t) >= MIN_PAGE_CHARS:
-                        pages.append((url, t))
+                for u in _discover_team_links(root, home_html):
+                    if u not in sub_links:
+                        sub_links.append(u)
+            for url in sub_links:
+                if fetches >= MAX_FETCHES or len(pages) >= MAX_PAGES_TO_READ:
+                    break
+                if url.rstrip("/") in seen_sub:
+                    continue
+                seen_sub.add(url.rstrip("/"))
+                fetches += 1
+                t = _fetch_page_text(url)
+                if len(t) >= MIN_PAGE_CHARS:
+                    pages.append((url, t))
 
     # OBS: Apify-rendering som reserv för IP-blockerade sajter provades men
     # stängdes av på Davids begäran — även nedsänkt till 90s tak kändes det
