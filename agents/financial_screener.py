@@ -36,6 +36,7 @@ BRANSCH_KEYWORDS: dict[str, list[str]] = {
     "Elektronik/kontraktstillverkning":   ["elektroniktillverkning", "kontraktstillverkning", "legotillverkning elektronik"],
     "Verktygshandel (fordon & maskiner)": ["verktygsmaskiner", "handverktyg tillverkning", "specialverktyg fordon"],
     "Maskinhandel (jordbruk/gruv/bygg)":  ["jordbruksmaskiner", "entreprenadmaskiner", "anläggningsmaskiner"],
+    "Metallkonstruktion & maskinkomponenter": ["metallstommar", "smide", "maskinkomponenter"],
     "Grossist (generellt)":               ["grossist", "partihandel", "grossisthandel"],
     "Bygggrossist":                       ["byggvaruhandel", "byggmaterial grossist", "bygggrossist"],
     "Distribution/partihandel":           ["distribution", "partihandel", "import grossist"],
@@ -84,6 +85,11 @@ BRANSCH_SNI: dict[str, list[str]] = {
     # lantbruk/entreprenad, en annan kundprofil. Live-testad juli 2026: 19/31 bolag
     # kvalificerade (lagerandel 20-58%), betydligt rikare nisch än verktygshandeln.
     "Maskinhandel (jordbruk/gruv/bygg)": ["4661", "4663"],
+    # David bad om exakta SNI-underkoder (juli 2026): 25110 metallstommar, 25400
+    # smidning/formning av metall, 28110 motorer/turbiner, 28150 lager/kugghjul/
+    # kraftöverföring, 28200 andra maskiner för allmänt ändamål. Smalare än de breda
+    # divisionerna 25/28/29/30 (redan täckta av "Tillverkning (generellt)").
+    "Metallkonstruktion & maskinkomponenter": ["25110", "25400", "28110", "28150", "28200"],
     "Grossist (generellt)": ["46"],
     "Bygggrossist": ["466", "4673", "4674"],
     "Distribution/partihandel": ["46"],
