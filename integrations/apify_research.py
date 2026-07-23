@@ -675,13 +675,30 @@ def _probe(url: str, timeout: int = 5) -> str:
 
 
 def _page_matches_company(html: str, bolag: str) -> bool:
-    """True om sidan rimligt hör till bolaget (och inte är en parkerad domän)."""
+    """
+    True om sidan rimligt hör till bolaget (och inte är en parkerad domän).
+
+    Kräver att namnorden dyker upp som en SAMMANHÄNGANDE FRAS ("side system"),
+    inte bara att varje ord för sig råkar finnas nånstans på sidan. Att bara
+    kräva att alla ord matchar var för sig (tidigare fix, för Schuchardt
+    Maskin AB) räcker inte när namnet består av vanliga engelska ord — "Side
+    System AB" gissades till side.com, en stor amerikansk mäklarplattform där
+    både "side" OCH "system" råkar finnas naturligt i löptexten (och till och
+    med en "recruiting@side.com" som felaktigt sparades som VD:ns mejl).
+    Enordsnamn (t.ex. "Vimek") matchas som helt ord (\\b), inte substräng,
+    så "vimek" inte råkar träffa en oturlig delsträng i annan text.
+    """
     low = html.lower()
     if any(bad in low for bad in _PARKED_HINTS):
         return False
     tokens = [w for w in re.split(r"[^a-z0-9]+", _ascii_name(bolag))
-              if len(w) >= 4 and w not in _LEGAL_TOKENS]
-    return any(t in low for t in tokens[:2]) if tokens else True
+              if len(w) >= 3 and w not in _LEGAL_TOKENS]
+    if not tokens:
+        return True
+    if len(tokens) == 1:
+        return re.search(rf"\b{re.escape(tokens[0])}\b", low) is not None
+    phrase = " ".join(tokens[:3])
+    return phrase in low
 
 
 def guess_company_website(bolag: str, max_probes: int = 12) -> str:
