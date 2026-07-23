@@ -367,6 +367,11 @@ def _team_page_urls(base_url: str, html: str, max_pages: int = 3) -> list[str]:
     if not html:
         return []
     base = urllib.parse.urlparse(base_url)
+    # www. avskalat innan jämförelse — sajter som omdirigerar apex→www (t.ex.
+    # vimek.com → www.vimek.com) har alla interna länkar i www.-form, vilket en
+    # exakt strängjämförelse annars kastar bort som "fel domän" (Vimek AB-fallet,
+    # samma bugg som i agents/people_finder.py:_discover_team_links).
+    base_host = base.netloc.lower().removeprefix("www.")
     found: list[str] = []
     seen: set[str] = set()
     for href in _HREF_RE.findall(html):
@@ -376,7 +381,8 @@ def _team_page_urls(base_url: str, html: str, max_pages: int = 3) -> list[str]:
         absolute = urllib.parse.urljoin(base_url, href)
         p = urllib.parse.urlparse(absolute)
         # Bara samma domän, hoppa mailto/tel/ankare
-        if p.scheme not in ("http", "https") or p.netloc != base.netloc:
+        if (p.scheme not in ("http", "https")
+                or p.netloc.lower().removeprefix("www.") != base_host):
             continue
         clean = absolute.split("#")[0]
         if clean in seen:

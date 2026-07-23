@@ -222,14 +222,20 @@ def _discover_team_links(base: str, html: str, max_links: int = 5) -> list[str]:
     if not html:
         return []
     import urllib.parse
-    base_host = urllib.parse.urlparse(base).netloc
+    # www. avskalat innan jämförelse — många sajter (t.ex. vimek.com) omdirigerar
+    # apex-domänen till www., och alla interna länkar i HTML:en pekar då på
+    # www.-formen. En exakt strängjämförelse (vimek.com != www.vimek.com) kastade
+    # tidigare bort ALLA länkar på sådana sajter — startsidans meny såg tom ut
+    # trots att den hade fem raka länkar till /contacts/ (Vimek AB-fallet).
+    base_host = urllib.parse.urlparse(base).netloc.lower().removeprefix("www.")
     strong: list[str] = []
     weak: list[str] = []
     seen: set[str] = set()
     for href in _HREF_RE.findall(html):
         absolute = urllib.parse.urljoin(base + "/", href).split("#")[0].rstrip("/")
         p = urllib.parse.urlparse(absolute)
-        if p.scheme not in ("http", "https") or p.netloc != base_host:
+        if (p.scheme not in ("http", "https")
+                or p.netloc.lower().removeprefix("www.") != base_host):
             continue
         if absolute in seen or absolute == base:
             continue
