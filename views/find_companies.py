@@ -189,13 +189,18 @@ def render():
             found_n, in_bransch_n = len(kw_hits), len(pool)
 
         else:
-            # Segmentering-svep län för län.
+            # Segmentering-svep län för län. 500 = ungefär taket för vad
+            # allabolag.segmentering() praktiskt orkar hämta per anrop (paginerar
+            # max 50 sidor) — tidigare 150 vid rikssvep klippte bort över hälften
+            # av bolagen i folktäta län (Stockholm hade minst 500 i storleksbandet,
+            # bara 150 användes). Längre svep-tid, men fortfarande gratis
+            # Allabolag-skrapning — ingen AI-kostnad.
             if ort == "Hela Sverige":
                 lan_list = screener.LAN
-                per_lan = 150
+                per_lan = 500
             else:
                 lan_list = [ort]
-                per_lan = 300
+                per_lan = 500
 
             prefixes = screener.BRANSCH_SNI.get(bransch_val, [])
             pooled: dict = {}
