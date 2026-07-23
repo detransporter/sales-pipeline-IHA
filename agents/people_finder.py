@@ -37,7 +37,12 @@ from dotenv import load_dotenv
 # Avkodare för Cloudflares mejlskydd (samma XOR-avkodning som e-postskraparen
 # redan använder) — utan den ser Claude bara platshållartexten "[email
 # protected]" på skyddade sajter (Nordcon-fallet: mejlet syntes aldrig).
-from integrations.apify_research import _decode_cfemail
+# _EMAIL_JUNK/_generate_email_variants: samma skräplista och mönster-gissning
+# som e-postskraparen använder — så en mall-platshållare som "namn.namn@..."
+# (Nords International-fallet) upptäcks och ersätts med en gissning byggd på
+# personens RIKTIGA namn, istället för att ge upp helt.
+from integrations.apify_research import (_decode_cfemail, _EMAIL_JUNK,
+                                          _generate_email_variants)
 
 # BeautifulSoup ger strukturbevarande text (namn/titel/mejl hålls ihop rad för
 # rad, bild-alt-texter följer med). Tålig import — utan bs4 körs regex-strip.
@@ -549,6 +554,24 @@ def find_person(bolag: str, website: str = "", target_role: str = "",
     _log(f"[people_finder] {bolag}: läste {kalla_url} → {namn} ({titel})")
     _remember_outcome(bolag, bransch, kalla_url, namn, titel)
 
+    # Claude ombeds redan undvika generiska adresser, men en mall-platshållare
+    # ("namn.namn@...", "fornamn.efternamn@...") kan se ut som en riktig
+    # personlig adress i texten — dubbelkolla mot samma skräplista skrapan
+    # använder innan den godtas.
+    email = str(data.get("email", "")).strip()
+    if email and any(j in email.lower() for j in _EMAIL_JUNK):
+        email = ""
+
+    # Ingen (riktig) e-post hittad, men vi känner namnet och domänen — gissa
+    # de vanligaste svenska mönstren istället för att ge upp helt. David
+    # väljer sedan i leadskortet (redan byggt UI för email_candidates).
+    email_candidates: list[str] = []
+    email_pattern = ""
+    domain_site = base or discovered_site
+    if not email and domain_site:
+        domain = urllib.parse.urlparse(domain_site).netloc.lower().replace("www.", "")
+        email_candidates = _generate_email_variants(namn, domain)[:6]
+
     return {
         "namn": namn,
         "titel": titel,
@@ -563,8 +586,12 @@ def find_person(bolag: str, website: str = "", target_role: str = "",
         # Hemsida upptäckt via sökningen (när leadet saknade en) — spara på leadet.
         "website": discovered_site,
         # Personens egna kontaktuppgifter om de stod vid namnet i texten.
-        "email": str(data.get("email", "")).strip(),
+        "email": email,
         "telefon": str(data.get("telefon", "")).strip(),
         # Alla lästa personer (namn/titel/mejl/tel) — för väljaren i leadskortet.
         "kandidater": kandidater,
+        # Gissade adresser (mönster förnamn.efternamn@domän m.fl.) — visas som
+        # väljare i leadskortet, sparas ALDRIG automatiskt (bara "email" gör det).
+        "email_candidates": email_candidates,
+        "email_pattern": email_pattern,
     }
