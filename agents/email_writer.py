@@ -510,38 +510,55 @@ def generate_email(
     # ── Anropa Claude ──────────────────────────────────────────────────────────
     # max_retries=5: fler automatiska omförsök vid 529 Overloaded / tillfälliga fel
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"), max_retries=5)
-    response = client.messages.create(
-        model=MODEL,
-        # Modellen tänker innan den svarar och tänkandet räknas in i max_tokens —
-        # 800 (gamla värdet) räckte inte till ett helt sexstyckesmejl.
-        max_tokens=6000,
-        system=_ROLE_INSTRUCTIONS[roll],
-        messages=[{"role": "user", "content": user_msg}],
-    )
-    # Plocka bara textblocken (modellen kan inleda med ett tankeblock)
-    raw = "".join(b.text for b in response.content if b.type == "text").strip()
 
-    # Extrahera JSON — tolerant mot prosa/tankeblock runt själva JSON:en.
-    if "```" in raw:
-        parts = raw.split("```")
-        if len(parts) >= 2:
-            raw = parts[1]
-            if raw.lower().startswith("json"):
-                raw = raw[4:]
-            raw = raw.strip()
-    try:
-        data = json.loads(raw)
-    except Exception:
-        data = {}
-    if not data:
+    def _call_and_parse() -> dict:
+        response = client.messages.create(
+            model=MODEL,
+            # Modellen tänker innan den svarar och tankeblocket räknas in i
+            # max_tokens — 9000 (upp från 6000) ger marginal mot de gånger
+            # tänkandet blir ovanligt långt och annars trunkerar JSON-svaret
+            # mitt i (tomt body-fält, bara signaturen kvar i utkastet).
+            max_tokens=9000,
+            system=_ROLE_INSTRUCTIONS[roll],
+            messages=[{"role": "user", "content": user_msg}],
+        )
+        # Plocka bara textblocken (modellen kan inleda med ett tankeblock)
+        raw = "".join(b.text for b in response.content if b.type == "text").strip()
+
+        # Extrahera JSON — tolerant mot prosa/tankeblock runt själva JSON:en.
+        if "```" in raw:
+            parts = raw.split("```")
+            if len(parts) >= 2:
+                raw = parts[1]
+                if raw.lower().startswith("json"):
+                    raw = raw[4:]
+                raw = raw.strip()
         try:
-            i, j = raw.find("{"), raw.rfind("}")
-            if i != -1 and j > i:
-                data = json.loads(raw[i:j + 1])
+            data = json.loads(raw)
         except Exception:
             data = {}
+        if not data:
+            try:
+                i, j = raw.find("{"), raw.rfind("}")
+                if i != -1 and j > i:
+                    data = json.loads(raw[i:j + 1])
+            except Exception:
+                data = {}
+        return data
+
+    # Trunkerat tankeblock ger ibland ett avklippt JSON-svar → tomt body-fält.
+    # Ett omförsök löser nästan alltid det (nytt anrop, ny tankelängd) — utan
+    # detta skickades tidigare tyst ett utkast med bara signaturen kvar.
+    data = _call_and_parse()
+    if not str(data.get("body", "")).strip():
+        data = _call_and_parse()
 
     body = str(data.get("body", "")).strip()
+    if not body:
+        raise RuntimeError(
+            "AI-svaret blev trunkerat två gånger i rad (troligen ovanligt långt "
+            "resonemang) — inget mejl skrevs. Försök igen.")
+
     # Säkerhetsnet: garantera signatur
     if "0737168367" not in body or "linkedin.com/in/davidleifsson" not in body.lower():
         body = body.rstrip() + "\n\n" + SIGNATURE
