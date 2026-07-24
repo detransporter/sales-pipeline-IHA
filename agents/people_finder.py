@@ -371,7 +371,13 @@ def _search_contact_page(bolag: str) -> str:
         # minuter och blockera hela bulk-kön bakom sig. Ett bolag som inte svarar
         # inom 30s ska ge upp och gå vidare, inte frysa resten av batchen.
         client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"), timeout=30.0)
-        tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 3}]
+        # max_uses=1 (var 3): varje extra sökning inom samma anrop skickar med
+        # HELA den växande kontexten (tidigare sökresultat) igen — 3 sökningar
+        # kunde kosta 10x en enda på svårhittade bolag (24/7-2026: 388 137
+        # tokens på en timme för ~21 bolag, ~15 kr — se bulk-körningen samma
+        # kväll). En sökning räcker nästan alltid för att hitta domänen; hittar
+        # den inget faller vi tillbaka på "ingen sida hittades" som redan finns.
+        tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 1}]
         messages = [{"role": "user", "content": user}]
         resp = client.messages.create(model=MODEL, max_tokens=500,
                                       tools=tools, messages=messages)
