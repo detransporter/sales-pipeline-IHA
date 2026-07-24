@@ -573,6 +573,21 @@ def find_person(bolag: str, website: str = "", target_role: str = "",
     email = str(data.get("email", "")).strip()
     if email and any(j in email.lower() for j in _EMAIL_JUNK):
         email = ""
+    telefon = str(data.get("telefon", "")).strip()
+
+    # Claude fyller ibland i e-post/telefon i kandidatlistan för DEN VALDA
+    # personen men missar att lyfta det till toppsvaret (vanligast när flera
+    # roller listas på samma sida, t.ex. VD + inköpschef — David märkte att
+    # telefonnumret "inte kom med" i just den situationen). Komplettera från
+    # kandidatens egen post innan vi ger upp — bara SAMMA namn, aldrig en
+    # annan persons uppgifter.
+    match = next((k for k in kandidater if k["namn"] == namn), None)
+    if match:
+        if not email and match.get("email") and not any(
+                j in match["email"].lower() for j in _EMAIL_JUNK):
+            email = match["email"]
+        if not telefon and match.get("telefon"):
+            telefon = match["telefon"]
 
     # Ingen (riktig) e-post hittad, men vi känner namnet och domänen — gissa
     # de vanligaste svenska mönstren istället för att ge upp helt. David
@@ -599,7 +614,7 @@ def find_person(bolag: str, website: str = "", target_role: str = "",
         "website": discovered_site,
         # Personens egna kontaktuppgifter om de stod vid namnet i texten.
         "email": email,
-        "telefon": str(data.get("telefon", "")).strip(),
+        "telefon": telefon,
         # Alla lästa personer (namn/titel/mejl/tel) — för väljaren i leadskortet.
         "kandidater": kandidater,
         # Gissade adresser (mönster förnamn.efternamn@domän m.fl.) — visas som
