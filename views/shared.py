@@ -5,11 +5,28 @@ Allt som förr låg överst i app.py och användes av flera sidor bor här nu, s
 att det finns på EN plats. Ändrar du t.ex. statuslistan gör du det här.
 """
 
+import logging
 import urllib.parse
 
 import streamlit as st
 
 from database import supabase_client as db
+
+# Säkerhetsnät för tysta fel: shared.action() (längst ner i filen) loggar hit
+# ISTÄLLET FÖR att bara visa felet i UI:t och sedan glömma det. Kika i
+# app_errors.log om appen känns "knäpp" — ett fel som blinkade förbi i UI:t
+# (eller hände i en åtgärd ingen såg) lämnar ändå ett spår här. Skriver aldrig
+# till loggen om filen av någon anledning inte går att öppna (t.ex. en
+# skrivskyddad molnmiljö) — då tappar vi bara loggningen, aldrig appen.
+try:
+    logging.basicConfig(
+        filename="app_errors.log",
+        level=logging.WARNING,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+except Exception:
+    pass
+_logger = logging.getLogger("sales_pipeline")
 
 
 # ── Konstanter (förr inskrivna på flera ställen) ─────────────────────────────
@@ -362,5 +379,9 @@ class action:
             if self.rerun:
                 st.rerun()
             return False
+        try:
+            _logger.warning("%s: %s", self.felmeddelande, exc, exc_info=True)
+        except Exception:
+            pass
         st.error(f"{self.felmeddelande}: {exc}")
         return True  # svälj felet — appen kraschar inte
