@@ -1,141 +1,21 @@
-"""🌱 Leads — hitta person + godkänn (en enda lista)."""
+"""🌱 Leads — hitta person + godkänn (en enda lista).
 
-import re
+Äger LISTAN: bulk-bearbetning (⚡ Auto/🚀 Bearbeta alla), sortering/filter,
+och "hitta fler leads"-panelen. Ett enskilt kort (allt som visas/kan göras
+för ETT lead) bor i `views/lead_card.py` — se den filens docstring för
+varför uppdelningen gjordes.
+"""
 
 import streamlit as st
 
-from agents import people_finder
-from integrations import apify_research as _apify
-from integrations import email_sender
-from agents import company_analyzer
 from database import supabase_client as db
-from views.shared import (goto, person_link_inline, render_company_analysis,
-                          render_email_composer, log_sent_email, kategori_label,
-                          cached_sent_emails, clear_data_cache)
-
-# Open Brain-minnet (tålig import — kortet funkar även utan det).
-try:
-    from brain import open_brain as _brain
-except Exception:
-    _brain = None
+from integrations import apify_research as _apify
+from views.lead_card import enrich_lead, render_lead_card
+from views.shared import goto, cached_sent_emails
 
 # Hur många leads auto-körningen bearbetar per omgång (personsök är långsamt/kostar,
 # så vi tar några i taget och ritar om — trilar igenom listan utan att frysa sidan).
 AUTO_BATCH = 3
-
-
-# Generiska adresser (info@, order@, ...) sparas inte som leadets e-post —
-# David vill bara ha personliga adresser i kortet. De skrapade adresserna syns
-# ändå som länkar på kortet, de tar bara inte e-postfältets plats.
-_GENERIC_LOCALPARTS = {
-    "info", "kontakt", "contact", "order", "orders", "sales", "forsaljning",
-    "försäljning", "office", "mail", "post", "hello", "hej", "support",
-    "kundtjanst", "kundservice", "kundcenter", "customercare", "customerservice",
-    "admin", "reception", "faktura", "invoice", "webmaster", "noreply",
-    "no-reply", "ekonomi", "economy", "finance", "ir", "hr", "marknad",
-    "marketing", "vaxel", "service", "butik", "shop", "export", "offert",
-    "website", "whistleblower",
-}
-
-
-def _same_person(a: str, b: str) -> bool:
-    """
-    Samma person trots olika namnform? Registret skriver ofta alla förnamn
-    ("Per Lennart Axelsson") medan hemsidan skriver tilltalsnamnet ("Per
-    Axelsson"). Matchar när det ena namnets ord ryms i det andras — minst
-    för- och efternamn gemensamma.
-    """
-    ta = set((a or "").lower().split())
-    tb = set((b or "").lower().split())
-    if len(ta) < 2 or len(tb) < 2:
-        return False
-    return ta <= tb or tb <= ta
-
-
-def _personal_email(addr: str) -> str:
-    """Adressen om den är personlig, annars tom sträng (info@, ekonomi@ m.fl.)."""
-    addr = (addr or "").strip()
-    if not addr or "@" not in addr:
-        return ""
-    local = addr.split("@")[0].lower()
-    if local in _GENERIC_LOCALPARTS:
-        return ""
-    # bolag@bolag.se — lokaldelen är domännamnet = generisk företagsadress
-    domain_base = addr.split("@")[1].split(".")[0].lower()
-    if local == domain_base:
-        return ""
-    return addr
-
-
-def _enrich_lead(l, contact_cache) -> dict:
-    """
-    Berika ETT lead: hemsida (gratis gissning) + e-post + telefon (gratis) och rätt
-    person (find_person — gratis web search först, Apify bara om krediter). Tålig:
-    fel på ett steg stoppar inte de andra. Returnerar vad som hittades.
-    """
-    lid = l["id"]
-    had_web = bool((l.get("website") or "").strip())
-    web = (l.get("website") or "").strip()
-    res = {"web": False, "mail": False, "tel": False, "person": False}
-
-    if not web:
-        try:
-            web = _apify.guess_company_website(l.get("bolag", "")) or ""
-        except Exception:
-            web = ""
-    if web:
-        try:
-            contact = _apify.find_emails(web, l.get("bolag", ""), render=False)
-            email = (_personal_email(contact.get("best", ""))
-                     or contact.get("guessed", ""))
-            tel = contact.get("telefon", "")
-            contact_cache[lid] = {**contact, "website": web}
-            db.update_lead_suggestion_contact(lid, email=email, website=web, telefon=tel)
-            res["web"] = not had_web
-            res["mail"] = bool(contact.get("best"))
-            res["tel"] = bool(tel)
-        except Exception:
-            pass
-    behov_person = not (l.get("namn") or "").strip()
-    behov_email = not (l.get("email") or "").strip()
-    if behov_person or behov_email:
-        try:
-            found = people_finder.find_person(
-                l.get("bolag", ""), web, l.get("titel", ""), l.get("bransch", ""))
-            if behov_person and found.get("namn"):
-                # Leadet saknade person → spara bästa valet + kontaktuppgifter.
-                db.update_lead_suggestion_person(
-                    lid, found["namn"], found.get("titel", ""),
-                    found.get("linkedin_url", ""))
-                res["person"] = True
-                # Personlig mejl/telefon lästa vid namnet på sidan slår generiska
-                # info@-adresser; hemsida upptäckt via sökningen sparas också.
-                if (found.get("email") or found.get("telefon")
-                        or found.get("website")):
-                    db.update_lead_suggestion_contact(
-                        lid, email=found.get("email", ""),
-                        website=found.get("website") or web,
-                        telefon=found.get("telefon", ""))
-                    res["mail"] = res["mail"] or bool(found.get("email"))
-                    res["tel"] = res["tel"] or bool(found.get("telefon"))
-            elif behov_email:
-                # Leadet HAR en person (Davids egen eller tidigare hittad) men
-                # saknar mejl. Skriv ALDRIG över namnet — leta i stället upp
-                # samma person bland de lästa kandidaterna och ta hens uppgifter.
-                mitt_namn = (l.get("namn") or "").strip()
-                for k in found.get("kandidater") or []:
-                    if (_same_person(k.get("namn", ""), mitt_namn)
-                            and (k.get("email") or k.get("telefon"))):
-                        db.update_lead_suggestion_contact(
-                            lid, email=k.get("email", ""),
-                            website=found.get("website") or web,
-                            telefon=k.get("telefon", ""))
-                        res["mail"] = res["mail"] or bool(k.get("email"))
-                        res["tel"] = res["tel"] or bool(k.get("telefon"))
-                        break
-        except Exception:
-            pass
-    return res
 
 
 def render():
@@ -168,113 +48,11 @@ def render():
         st.info("Inga leads väntar. Hitta nya bolag under 🔍 Hitta bolag.")
         st.button("🔍 Gå till Hitta bolag →", on_click=goto, args=("🔍 Hitta bolag",))
     else:
-        # ── EN knapp: bearbeta hela den godkända listan (gratis-först) ──────
-        # Ett svep hittar hemsida + e-post + telefon (gratis) och rätt person
-        # (gratis web search först, Apify bara om krediter finns).
-        need_work = [l for l in pending
-                     if l.get("id") and (not (l.get("website") or "").strip()
-                                         or not l.get("namn")
-                                         or not (l.get("email") or "").strip())]
-        if need_work:
-            bcol, tcol = st.columns([2, 1])
-            with bcol:
-                run_now = st.button(f"🚀 Bearbeta {len(need_work)} nya leads",
-                                    type="primary", key="bulk_enrich",
-                                    use_container_width=True)
-            with tcol:
-                auto = st.toggle(
-                    "⚡ Auto", key="auto_enrich",
-                    help="Bearbetar nya leads automatiskt, några i taget, tills listan är "
-                         "klar. Startar av sig själv när du sparar nya leads. Drar krediter "
-                         "för personsök — stäng av när du vill.")
-            st.caption("Hittar hemsida, e-post, telefon och rätt person. Hemsida/e-post/"
-                       "telefon är gratis; personsök körs gratis (web search) och faller "
-                       "bara tillbaka på Apify om det finns krediter.")
-
-            # ── Manuell körning: hela listan i ett svep med progressbar ──
-            if run_now:
-                prog = st.progress(0.0, text="Bearbetar leads...")
-                tot = {"web": 0, "mail": 0, "tel": 0, "person": 0}
-                for i, l in enumerate(need_work):
-                    r = _enrich_lead(l, contact_cache)
-                    for k in tot:
-                        tot[k] += int(r[k])
-                    prog.progress((i + 1) / len(need_work),
-                                  text=f"Bearbetat {i + 1}/{len(need_work)} bolag")
-                st.session_state["apify_credit"] = _apify.remaining_usage_usd()
-                st.success(f"Klart — av {len(need_work)}: hemsida +{tot['web']}, e-post "
-                           f"+{tot['mail']}, telefon +{tot['tel']}, person +{tot['person']}.")
-                st.rerun()
-
-            # ── Auto-körning: trilar igenom listan i satser, self-terminating ──
-            # Varje lead försöks EN gång per session (auto_done) så leads som inte
-            # går att hitta inte loopar för evigt.
-            done_ids = st.session_state.setdefault("auto_done", set())
-            todo = [l for l in need_work if l["id"] not in done_ids]
-            if auto and todo:
-                batch = todo[:AUTO_BATCH]
-                done_before = len(need_work) - len(todo)
-                with st.spinner(f"⚡ Auto-bearbetar… {done_before + len(batch)}/{len(need_work)}"):
-                    for l in batch:
-                        _enrich_lead(l, contact_cache)
-                        done_ids.add(l["id"])
-                st.session_state["apify_credit"] = _apify.remaining_usage_usd()
-                st.rerun()          # fortsätt med nästa sats
-            elif auto:
-                st.caption("✅ Auto-bearbetning klar för den här omgången.")
-        else:
-            st.caption("✅ Alla leads har hemsida och person — godkänn nedan för pipeline.")
-
+        _render_bulk_enrich(pending, contact_cache)
         st.divider()
-
-        # ── Sortering + filter (hjälper när listan är lång) ──────────────────
-        # Valet sparas i beständiga session-fält (…_v) så det minns sig även efter
-        # sidbyte — Streamlit rensar annars widget-state för sidor som inte visas.
-        SORT_OPTS = ["IHA-score (högst)", "Lagerandel (högst)", "Bolag (A–Ö)", "Nyast först"]
-        FILT_OPTS = ["Alla", "Saknar person", "Har person (redo att godkänna)",
-                     "Saknar hemsida/e-post"]
-        _s = st.session_state.get("leads_sort_v", SORT_OPTS[0])
-        _f = st.session_state.get("leads_filter_v", FILT_OPTS[0])
-        scol, fcol = st.columns(2)
-        with scol:
-            sort_by = st.selectbox("Sortera", SORT_OPTS,
-                                   index=SORT_OPTS.index(_s) if _s in SORT_OPTS else 0,
-                                   key="leads_sort")
-        with fcol:
-            filt = st.selectbox("Visa", FILT_OPTS,
-                                index=FILT_OPTS.index(_f) if _f in FILT_OPTS else 0,
-                                key="leads_filter")
-        st.session_state["leads_sort_v"] = sort_by
-        st.session_state["leads_filter_v"] = filt
-
-        def _num(v):
-            try:
-                return float(v)
-            except Exception:
-                return -1.0
-
-        view = list(pending)
-        if filt == "Saknar person":
-            view = [l for l in view if not (l.get("namn") or "").strip()]
-        elif filt == "Har person (redo att godkänna)":
-            view = [l for l in view if (l.get("namn") or "").strip()]
-        elif filt == "Saknar hemsida/e-post":
-            view = [l for l in view if not (l.get("website") or "").strip()
-                    or not (l.get("email") or "").strip()]
-
-        if sort_by == "IHA-score (högst)":
-            view.sort(key=lambda l: _num(l.get("score")), reverse=True)
-        elif sort_by == "Lagerandel (högst)":
-            view.sort(key=lambda l: _num(l.get("lagerandel")), reverse=True)
-        elif sort_by == "Bolag (A–Ö)":
-            view.sort(key=lambda l: (l.get("bolag") or "").lower())
-        elif sort_by == "Nyast först":
-            view.sort(key=lambda l: (l.get("created_at") or ""), reverse=True)
-
-        st.caption(f"Visar {len(view)} av {len(pending)} leads "
-                   f"— sorterat på {sort_by.lower()}.")
+        view = _sorted_and_filtered(pending)
         for l in view:
-            _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag)
+            render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag)
 
     # Sekundärt: föreslå fler leads automatiskt (AI/Apify)
     with st.expander("➕ Hitta fler leads automatiskt (AI / Google Maps)"):
@@ -300,462 +78,111 @@ def render():
                     st.error(f"Fel: {e}")
 
 
-def _render_lead_card(l, contact_cache, analysis_cache, _emailed_bolag):
-    """Ett lead-kort: person/e-post/godkänn + manuell kontakt, analys och mejl."""
-    lid = l.get("id")
-    cached = contact_cache.get(lid, {})
-    website = cached.get("website") or l.get("website") or ""
-    emails = cached.get("emails") or ([l["email"]] if l.get("email") else [])
-    guessed = cached.get("guessed") or ""
-    telefon = cached.get("telefon") or l.get("telefon") or ""
+def _render_bulk_enrich(pending: list, contact_cache: dict) -> None:
+    """EN knapp: bearbeta hela den godkända listan (gratis-först). Ett svep
+    hittar hemsida + e-post + telefon (gratis) och rätt person (gratis web
+    search först, Apify bara om krediter finns)."""
+    need_work = [l for l in pending
+                 if l.get("id") and (not (l.get("website") or "").strip()
+                                     or not l.get("namn")
+                                     or not (l.get("email") or "").strip())]
+    if not need_work:
+        st.caption("✅ Alla leads har hemsida och person — godkänn nedan för pipeline.")
+        return
 
-    with st.container(border=True):
-        cols = st.columns([3, 1, 1, 1, 1])
-        with cols[0]:
-            _kb = kategori_label(l.get("kategori"))
-            st.markdown(f"{(_kb + ' · ') if _kb else ''}"
-                        f"**{l.get('bolag')}** — {l.get('titel')} · "
-                        f"_{l.get('bransch','')}_ (score {l.get('score', 0)})")
-            if l.get("namn"):
-                _t = (l.get("titel") or "").strip()
-                st.markdown(f"👤 **{l['namn']}**" + (f" — {_t}" if _t else "") + " · "
-                            + person_link_inline(l["namn"], l.get("bolag", ""),
-                                                 l.get("linkedin_url", "")))
-            else:
-                st.caption("👤 _Ingen person hittad ännu — tryck 'Hitta person'._")
-            if website:
-                st.markdown(f"🌐 [Företagets hemsida]({website})")
-            # Visa bara PERSONLIGA adresser — info@/order@ m.fl. är brus för David.
-            # Märk VARJE adress med vems den är, om vi kan avgöra det:
-            #  1. Exakt träff mot en tidigare hittad kandidat (namn+titel+mejl
-            #     från en personsökning) — säkrast källa.
-            #  2. Exakt träff mot leadets SPARADE person/mejl.
-            #  3. Namnfragment i adressens lokaldel matchar sparade personens
-            #     namn (t.ex. "fredric@..." mot "Per Fredric Hakfelt") — en
-            #     skrapad adresslista har annars ingen som helst namnkoppling.
-            _personal = [e for e in emails if _personal_email(e)]
-            _saved = (l.get("email") or "").strip().lower()
-            _t = (l.get("titel") or "").strip()
-            _namn = (l.get("namn") or "").strip()
-            _namndelar = [p.lower() for p in _namn.split() if len(p) > 2]
+    bcol, tcol = st.columns([2, 1])
+    with bcol:
+        run_now = st.button(f"🚀 Bearbeta {len(need_work)} nya leads",
+                            type="primary", key="bulk_enrich",
+                            use_container_width=True)
+    with tcol:
+        auto = st.toggle(
+            "⚡ Auto", key="auto_enrich",
+            help="Bearbetar nya leads automatiskt, några i taget, tills listan är "
+                 "klar. Startar av sig själv när du sparar nya leads. Drar krediter "
+                 "för personsök — stäng av när du vill.")
+    st.caption("Hittar hemsida, e-post, telefon och rätt person. Hemsida/e-post/"
+               "telefon är gratis; personsök körs gratis (web search) och faller "
+               "bara tillbaka på Apify om det finns krediter.")
 
-            _titel_per_mejl = {
-                (k.get("email") or "").strip().lower(): (k.get("titel") or "").strip()
-                for k in st.session_state.get(f"found_people_{lid}", [])
-                if k.get("email")
-            }
-            if _t:
-                _titel_per_mejl.setdefault(_saved, _t)
+    # ── Manuell körning: hela listan i ett svep med progressbar ──
+    if run_now:
+        prog = st.progress(0.0, text="Bearbetar leads...")
+        tot = {"web": 0, "mail": 0, "tel": 0, "person": 0}
+        for i, l in enumerate(need_work):
+            r = enrich_lead(l, contact_cache)
+            for k in tot:
+                tot[k] += int(r[k])
+            prog.progress((i + 1) / len(need_work),
+                          text=f"Bearbetat {i + 1}/{len(need_work)} bolag")
+        st.session_state["apify_credit"] = _apify.remaining_usage_usd()
+        st.success(f"Klart — av {len(need_work)}: hemsida +{tot['web']}, e-post "
+                   f"+{tot['mail']}, telefon +{tot['tel']}, person +{tot['person']}.")
+        st.rerun()
 
-            def _email_label(e: str) -> str:
-                key = e.strip().lower()
-                titel = _titel_per_mejl.get(key, "")
-                if titel:
-                    return f"[{e}](mailto:{e}) _({titel})_"
-                local = key.split("@")[0].replace(".", " ").replace("-", " ")
-                if _t and any(part in local for part in _namndelar):
-                    return f"[{e}](mailto:{e}) _({_t}?)_"
-                return f"[{e}](mailto:{e})"
+    # ── Auto-körning: trilar igenom listan i satser, self-terminating ──
+    # Varje lead försöks EN gång per session (auto_done) så leads som inte
+    # går att hitta inte loopar för evigt.
+    done_ids = st.session_state.setdefault("auto_done", set())
+    todo = [l for l in need_work if l["id"] not in done_ids]
+    if auto and todo:
+        batch = todo[:AUTO_BATCH]
+        done_before = len(need_work) - len(todo)
+        with st.spinner(f"⚡ Auto-bearbetar… {done_before + len(batch)}/{len(need_work)}"):
+            for l in batch:
+                enrich_lead(l, contact_cache)
+                done_ids.add(l["id"])
+        st.session_state["apify_credit"] = _apify.remaining_usage_usd()
+        st.rerun()          # fortsätt med nästa sats
+    elif auto:
+        st.caption("✅ Auto-bearbetning klar för den här omgången.")
 
-            if _personal:
-                links = " · ".join(_email_label(e) for e in _personal[:4])
-                st.markdown(f"✉️ {links}")
-                st.code(_personal[0], language=None)
-            elif guessed:
-                st.markdown(f"✉️ {guessed}  ·  _kvalificerad gissning (ej verifierad)_")
-                st.code(guessed, language=None)
-            _hidden = len(emails) - len(_personal)
-            if _hidden > 0:
-                st.caption(f"_{_hidden} generisk(a) adress(er) dolda (info@ m.fl.) — "
-                           f"finns kvar på hemsidan om de behövs._")
-            if telefon:
-                _tel_href = "tel:" + re.sub(r"[^\d+]", "", telefon)
-                st.markdown(f"📞 [{telefon}]({_tel_href})")
-            # Anmärkning: bearbetat lead (hemsida finns) utan personlig mejl —
-            # bara generiska adresser (info@/ekonomi@) fanns, och de sparas inte.
-            # Tydlig flagga så David enkelt kan avböja leadet.
-            if website and not (l.get("email") or "").strip():
-                if (l.get("namn") or "").strip():
-                    st.warning("⚠️ Ingen personlig mejl sparad — generiska adresser "
-                               "(info@/ekonomi@) sparas inte. Kör 🔍 Kontaktuppgifter, "
-                               "eller ❌ Avböj leadet.")
-                else:
-                    st.warning("⚠️ Varken person eller personlig mejl — "
-                               "kör 🔍 Kontaktuppgifter eller ❌ Avböj.")
-            if l.get("motivering"):
-                st.caption(l["motivering"])
-            # E-postkandidater från senaste personsökning — väntar på val
-            cand_key = f"found_emails_{lid}"
-            if cand_key in st.session_state:
-                cands = st.session_state[cand_key]
-                pat = st.session_state.get(f"found_pat_{lid}", "")
-                pat_text = f" (mönster: **{pat}**)" if pat else ""
-                st.info(f"📧 Välj e-postadress att spara{pat_text}:")
-                sel = st.selectbox("Adress", cands,
-                                   key=f"sel_email_{lid}",
-                                   label_visibility="collapsed")
-                if st.button("💾 Spara vald adress", key=f"save_cand_{lid}",
-                             type="primary"):
-                    db.update_lead_suggestion_contact(
-                        lid, email=sel, website=website)
-                    del st.session_state[cand_key]
-                    st.session_state.pop(f"found_pat_{lid}", None)
-                    st.rerun()
-            # Personkandidater från senaste sökningen — välj vem som sparas på kortet.
-            # Titel + mejl/telefon visas bakom namnet så du ser vem som är vem.
-            people_key = f"found_people_{lid}"
-            if people_key in st.session_state:
-                folk = st.session_state[people_key]
 
-                def _person_label(p: dict) -> str:
-                    label = p.get("namn", "")
-                    if p.get("titel"):
-                        label += f" — {p['titel']}"
-                    extra = " · ".join(x for x in (p.get("email"), p.get("telefon")) if x)
-                    return label + (f"  ({extra})" if extra else "")
+def _sorted_and_filtered(pending: list) -> list:
+    """Sortering + filter (hjälper när listan är lång). Valet sparas i
+    beständiga session-fält (…_v) så det minns sig även efter sidbyte —
+    Streamlit rensar annars widget-state för sidor som inte visas."""
+    SORT_OPTS = ["IHA-score (högst)", "Lagerandel (högst)", "Bolag (A–Ö)", "Nyast först"]
+    FILT_OPTS = ["Alla", "Saknar person", "Har person (redo att godkänna)",
+                 "Saknar hemsida/e-post"]
+    _s = st.session_state.get("leads_sort_v", SORT_OPTS[0])
+    _f = st.session_state.get("leads_filter_v", FILT_OPTS[0])
+    scol, fcol = st.columns(2)
+    with scol:
+        sort_by = st.selectbox("Sortera", SORT_OPTS,
+                               index=SORT_OPTS.index(_s) if _s in SORT_OPTS else 0,
+                               key="leads_sort")
+    with fcol:
+        filt = st.selectbox("Visa", FILT_OPTS,
+                            index=FILT_OPTS.index(_f) if _f in FILT_OPTS else 0,
+                            key="leads_filter")
+    st.session_state["leads_sort_v"] = sort_by
+    st.session_state["leads_filter_v"] = filt
 
-                st.info(f"👥 {len(folk)} personer hittades på hemsidan — välj vem som sparas:")
-                psel = st.selectbox("Person", folk, format_func=_person_label,
-                                    key=f"sel_person_{lid}",
-                                    label_visibility="collapsed")
-                pc1, pc2 = st.columns([2, 1])
-                with pc1:
-                    if st.button("💾 Spara vald person", key=f"save_person_{lid}",
-                                 type="primary"):
-                        db.update_lead_suggestion_person(
-                            lid, psel["namn"], psel.get("titel", ""),
-                            l.get("linkedin_url", ""))
-                        if psel.get("email") or psel.get("telefon"):
-                            db.update_lead_suggestion_contact(
-                                lid, email=psel.get("email", ""), website=website,
-                                telefon=psel.get("telefon", ""))
-                        del st.session_state[people_key]
-                        st.rerun()
-                with pc2:
-                    if st.button("Stäng", key=f"close_people_{lid}",
-                                 help="Behåll nuvarande person och göm listan."):
-                        del st.session_state[people_key]
-                        st.rerun()
-        with cols[1]:
-            if lid and st.button("🔍 Kontaktuppgifter", key=f"person_{lid}",
-                                 use_container_width=True):
-                with st.spinner("Läser bolagets hemsida efter rätt person..."):
-                    try:
-                        found = people_finder.find_person(
-                            l.get("bolag", ""), l.get("website", ""),
-                            l.get("titel", ""), l.get("bransch", ""))
-                        if found.get("namn"):
-                            db.update_lead_suggestion_person(
-                                l["id"], found["namn"],
-                                found.get("titel", ""), found.get("linkedin_url", ""))
-                            msg = f"{found['namn']} ({found.get('sakerhet','?')} säkerhet)"
-                            # Personlig mejl/telefon lästa vid namnet på sidan → spara
-                            # direkt. Hemsida som sökningen upptäckte (leadet saknade
-                            # en, t.ex. Meson AB → mesongroup.com) sparas också.
-                            if (found.get("email") or found.get("telefon")
-                                    or found.get("website")):
-                                db.update_lead_suggestion_contact(
-                                    lid, email=found.get("email", ""),
-                                    website=found.get("website") or l.get("website", ""),
-                                    telefon=found.get("telefon", ""))
-                                _extra = " · ".join(x for x in (found.get("email"),
-                                                                found.get("telefon")) if x)
-                                msg += f" — {_extra}"
-                            # Spara e-postkandidater i session state → visas som selectbox i kortet
-                            if found.get("email_candidates"):
-                                st.session_state[f"found_emails_{lid}"] = found["email_candidates"]
-                                st.session_state[f"found_pat_{lid}"] = found.get("email_pattern", "")
-                                msg += " — välj e-post nedan"
-                            # Fler personer lästa på sidan → visa väljare i kortet
-                            if len(found.get("kandidater") or []) > 1:
-                                st.session_state[f"found_people_{lid}"] = found["kandidater"]
-                                msg += f" — {len(found['kandidater'])} personer hittades, välj nedan"
-                            st.success(msg)
-                            st.rerun()
-                        else:
-                            # Visa VARFÖR det blev tomt + vilken sida som lästes —
-                            # gör felsökning möjlig utan att gräva i serverloggen.
-                            _why = (found.get("motivering") or "").strip()
-                            _src = (found.get("källa") or "").strip()
-                            st.warning("Hittade ingen tydlig person."
-                                       + (f" {_why}" if _why else "")
-                                       + (f" Läste: {_src}" if _src
-                                          else " Ingen sida gick att läsa — kan vara "
-                                               "JS-sajt eller blockerad hämtning."))
-                    except Exception as e:
-                        st.error(f"Fel: {e}")
-        with cols[2]:
-            if lid and st.button("✉️ E-post", key=f"email_{lid}",
-                                 use_container_width=True):
-                with st.spinner("Letar e-post på hemsidan (renderar JS vid behov)..."):
-                    try:
-                        contact = _apify.find_emails(l.get("website", ""),
-                                                     l.get("bolag", ""), render=True)
-                        contact_cache[lid] = contact
-                        db.update_lead_suggestion_contact(
-                            lid,
-                            email=(_personal_email(contact.get("best", ""))
-                                   or contact.get("guessed", "")),
-                            website=contact.get("website", ""), telefon=contact.get("telefon", ""))
-                        _tel = contact.get("telefon", "")
-                        if contact.get("best"):
-                            via = " (via renderad sida)" if contact.get("rendered") else ""
-                            _telmsg = f" · 📞 {_tel}" if _tel else ""
-                            st.success(f"Hittade {len(contact['emails'])} adress(er){via}{_telmsg}.")
-                        elif contact.get("guessed"):
-                            st.info(f"Ingen publik adress — gissar {contact['guessed']} "
-                                    "(verifiera innan du mejlar).")
-                        elif contact.get("website"):
-                            st.warning("Hittade hemsidan men ingen publik e-post.")
-                        else:
-                            st.warning("Hittade ingen hemsida/e-post.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Fel: {e}")
-        with cols[3]:
-            if lid and st.button("✅ Godkänn", key=f"approve_{lid}",
-                                 type="primary", use_container_width=True):
-                try:
-                    db.promote_lead(l)
-                    clear_data_cache()
-                    st.success("Tillagd i pipeline!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Fel: {e}")
-        with cols[4]:
-            if lid and st.button("❌ Avböj", key=f"reject_{lid}",
-                                 use_container_width=True,
-                                 help="Passar inte (fel bransch/storlek e.d.) — "
-                                      "tas bort ur listan."):
-                try:
-                    db.update_lead_suggestion(lid, "rejected")
-                    st.success("Avböjd — borttagen ur leads.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Fel: {e}")
+    def _num(v):
+        try:
+            return float(v)
+        except Exception:
+            return -1.0
 
-        # Mejladresser: manuellt sparad + skrapad + gissad. Behövs för mejlfliken.
-        manual_email = l.get("email", "")
-        all_emails = list(dict.fromkeys(
-            e for e in ([manual_email] + emails + ([guessed] if guessed else []))
-            if e
-        ))
-        _sent_date = _emailed_bolag.get((l.get("bolag") or "").lower())
+    view = list(pending)
+    if filt == "Saknar person":
+        view = [l for l in view if not (l.get("namn") or "").strip()]
+    elif filt == "Har person (redo att godkänna)":
+        view = [l for l in view if (l.get("namn") or "").strip()]
+    elif filt == "Saknar hemsida/e-post":
+        view = [l for l in view if not (l.get("website") or "").strip()
+                or not (l.get("email") or "").strip()]
 
-        # Mejlstatus som synlig bricka på kortet — du ser den utan att öppna panelen.
-        if _sent_date:
-            st.success(f"✅ Mejl skickat {_sent_date}")
+    if sort_by == "IHA-score (högst)":
+        view.sort(key=lambda l: _num(l.get("score")), reverse=True)
+    elif sort_by == "Lagerandel (högst)":
+        view.sort(key=lambda l: _num(l.get("lagerandel")), reverse=True)
+    elif sort_by == "Bolag (A–Ö)":
+        view.sort(key=lambda l: (l.get("bolag") or "").lower())
+    elif sort_by == "Nyast först":
+        view.sort(key=lambda l: (l.get("created_at") or ""), reverse=True)
 
-        # ── Snabb-genväg: klistra in kontakt (för hårda bolag skraparen missar) ──
-        with st.expander("📋 Klistra in kontakt"):
-            raw = st.text_area(
-                "Klistra in namn / e-post / telefon (valfritt format)",
-                key=f"paste_{lid}", height=90,
-                placeholder="Tony Ekström, VD\ntony@soliferpolar.com\n0942-520 00")
-            if st.button("📋 Tolka & spara", key=f"paste_save_{lid}", type="primary"):
-                txt = raw or ""
-                _mails = _apify._EMAIL_RE.findall(txt)
-                _phones = _apify._extract_phones(txt)
-                p_email = _mails[0].strip().lower() if _mails else ""
-                p_tel = _phones[0] if _phones else ""
-                # Namn: en manuell inklistring är alltid avsiktlig, så den vinner
-                # även om leadet redan har ett (t.ex. registrets VD-namn) — annars
-                # sparas David:s korrekta mejl/telefon men det gamla, fel namnet
-                # ligger kvar. Ta första rad utan @ och utan långt sifferblock
-                # (2–5 ord), som ser ut som ett namn.
-                p_namn = ""
-                for line in txt.splitlines():
-                    # Dra bort ev. roll efter komma: "Tony Ekström, VD" → "Tony Ekström"
-                    cand = line.strip().split(",")[0].strip()
-                    if (cand and "@" not in cand and not re.search(r"\d{4,}", cand)
-                            and 2 <= len(cand.split()) <= 4):
-                        p_namn = cand
-                        break
-                if not (p_email or p_tel or p_namn):
-                    st.warning("Hittade varken namn, e-post eller telefon i texten.")
-                else:
-                    try:
-                        _old_n = (l.get("namn") or "").strip()
-                        if p_namn and _brain and _brain.is_configured():
-                            try:
-                                if _old_n and _old_n != p_namn:
-                                    _thought = (
-                                        f"[people_finder-lärdom] {l.get('bolag','')} "
-                                        f"({l.get('bransch','')}): agenten hade sparat "
-                                        f"\"{_old_n}\" (troligen bolagsregistrets VD), men "
-                                        f"David rättade till \"{p_namn}\" efter manuell "
-                                        "koll på hemsidan — leta djupare på Kontakt/"
-                                        "Ledning-sidor, lita inte på registrets VD-namn.")
-                                else:
-                                    _thought = (
-                                        f"[people_finder-lärdom] {l.get('bolag','')} "
-                                        f"({l.get('bransch','')}): agenten hade ingen person, "
-                                        f"David klistrade in \"{p_namn}\" — leta djupare på "
-                                        "Om oss/Ledning/Kontakt för liknande bolag.")
-                                _brain.capture_thought(_thought[:400])
-                            except Exception:
-                                pass
-                        if p_namn:
-                            db.update_lead_suggestion_person(
-                                lid, p_namn, l.get("titel", ""), l.get("linkedin_url", ""))
-                        if p_email or p_tel or website:
-                            db.update_lead_suggestion_contact(
-                                lid, email=p_email, website=website, telefon=p_tel)
-                        st.success(f"Sparat — namn: {p_namn or '(oförändrat)'} · "
-                                   f"e-post: {p_email or '—'} · telefon: {p_tel or '—'}")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Fel: {e}")
-
-        # Sekundära åtgärder samlade under EN panel (tre flikar) så listan blir
-        # lätt att skanna. Öppna bara det kort du jobbar med.
-        with st.expander("➕ Mer — kontakt, IHA-analys & mejl"):
-            tab_kontakt, tab_analys, tab_mejl = st.tabs(
-                ["✏️ Kontakt", "📊 IHA-analys", "📧 Mejl"])
-
-            # ── Flik: manuell kontakt (när automatik inte hittar rätt person) ──
-            with tab_kontakt:
-                with st.form(key=f"manual_{lid}"):
-                    # OBS: .get(key, "") ger None om kolumnen finns men är null →
-                    # text_input returnerar då None och .strip() kraschar. Tvinga str.
-                    m_namn  = st.text_input("Namn", value=l.get("namn") or "",
-                                            placeholder="Anna Lindqvist")
-                    m_titel = st.text_input("Roll", value=l.get("titel") or "",
-                                            placeholder="Inköpschef")
-                    m_li    = st.text_input("LinkedIn-URL (valfritt)",
-                                            value=l.get("linkedin_url") or "",
-                                            placeholder="https://linkedin.com/in/...")
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        m_email = st.text_input("E-post (valfritt)",
-                                                value=l.get("email") or "",
-                                                placeholder="anna.lindqvist@foretag.se")
-                    with c2:
-                        m_tel = st.text_input("Telefon (valfritt)",
-                                              value=l.get("telefon") or "",
-                                              placeholder="+46 70 123 45 67")
-                    if st.form_submit_button("💾 Spara"):
-                        try:
-                            # Lär agenten via Open Brain. TVÅ fall:
-                            #  1. Rättning: David skriver över en felgissning.
-                            #  2. Lärdom: agenten hittade INGEN, David hittade personen
-                            #     själv (t.ex. via hemsidan) — den mest värdefulla signalen.
-                            # Sparas → återanvänds av find_person för liknande bolag.
-                            _old = (l.get("namn") or "").strip()
-                            _new = (m_namn or "").strip()
-                            _rol = (m_titel or "").strip()
-                            if _new and _new != _old and _brain and _brain.is_configured():
-                                if _old:
-                                    _note = (f"[people_finder-rättning] {l.get('bolag','')} "
-                                             f"({l.get('bransch','')}): agenten gissade "
-                                             f"\"{_old}\" men rätt person är \"{_new}\""
-                                             + (f", {_rol}" if _rol else "")
-                                             + ". Vikta den rollen/källan högre för liknande bolag.")
-                                else:
-                                    _note = (f"[people_finder-lärdom] {l.get('bolag','')} "
-                                             f"({l.get('bransch','')}): agenten hittade ingen "
-                                             f"person, men rätt kontakt är \"{_new}\""
-                                             + (f", {_rol}" if _rol else "")
-                                             + " — hittad manuellt på hemsidan. Leta djupare på "
-                                             "Om oss/Ledning/Kontakt-sidor för liknande bolag.")
-                                try:
-                                    _brain.capture_thought(_note[:400])
-                                except Exception:
-                                    pass
-                            _li = (m_li or "").strip()
-                            _email = (m_email or "").strip()
-                            _tel = (m_tel or "").strip()
-                            if _new:
-                                db.update_lead_suggestion_person(
-                                    lid, _new, _rol, _li)
-                            if _email or _tel or website:
-                                db.update_lead_suggestion_contact(
-                                    lid, email=_email,
-                                    website=website, telefon=_tel)
-                            st.success("Sparat!")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Fel: {e}")
-
-            # ── Flik: IHA-föranalys (siffror + hemsida) innan kontakt ──
-            with tab_analys:
-                cached_a = analysis_cache.get(lid)
-
-                def _run(model_override=""):
-                    with st.spinner("Analyserar bolagets lagerläge (siffror + hemsida)..."):
-                        try:
-                            analysis_cache[lid] = company_analyzer.analyze_company(
-                                bolag=l.get("bolag", ""), bransch=l.get("bransch", ""),
-                                website=website, omsattning_msek=l.get("omsattning"),
-                                varulager_msek=l.get("varulager"),
-                                resultat_msek=l.get("resultat"),
-                                anstallda=l.get("anstallda"),
-                                lagerandel=l.get("lagerandel"),
-                                vinstmarginal=l.get("vinstmarginal"),
-                                orgnr=l.get("orgnr", ""), affarsmodell=model_override)
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Kunde inte analysera: {e}")
-
-                if st.button("🔬 Gör analys" if not cached_a else "🔄 Gör om analys",
-                             key=f"analyze_{lid}"):
-                    _run()
-                if cached_a:
-                    render_company_analysis(cached_a)
-                    # Överstyr affärsmodellen om klassningen blev fel (du är experten).
-                    _MODELS = ["tillverkning", "grossist", "handel", "bygg"]
-                    _cur = cached_a.get("affarsmodell", "")
-                    with st.expander("📐 Justera affärsmodell (styr benchmark)"):
-                        oc1, oc2 = st.columns([2, 1])
-                        pick = oc1.selectbox(
-                            "Affärsmodell", _MODELS,
-                            index=_MODELS.index(_cur) if _cur in _MODELS else 0,
-                            key=f"model_{lid}")
-                        if oc2.button("Räkna om", key=f"remodel_{lid}"):
-                            _run(model_override=pick)
-                else:
-                    st.caption("Tryck **Gör analys** — väver ihop bolagets bokslutssiffror "
-                               "med deras hemsida till en säljbar bild (drar ett API-anrop).")
-
-            # ── Flik: mejla direkt (backup-väg in om LinkedIn inte funkar) ──
-            # Att mejla = att kontakta → leaden flyttas till pipeline (status
-            # 'skickad') och loggas.
-            with tab_mejl:
-                if not all_emails:
-                    st.caption("Ingen e-postadress ännu — kör 🔍 Person eller ✉️ E-post, "
-                               "eller lägg in en adress under fliken Kontakt.")
-                elif _sent_date:
-                    st.caption(f"Redan mejlat {_sent_date}. Öppna Översikt om du vill "
-                               "kontakta igen.")
-                else:
-                    # Ärv affärsmodellen från en ev. gjord (och korrigerad) analys så
-                    # mejlet använder exakt samma benchmark som du godkänt.
-                    _a = analysis_cache.get(lid) or {}
-                    to, subj, body, send = render_email_composer(
-                        f"lead_{lid}", all_emails[0],
-                        dict(bolag=l.get("bolag", ""), namn=l.get("namn", ""),
-                             titel=l.get("titel", ""), bransch=l.get("bransch", ""),
-                             lagerandel=l.get("lagerandel"),
-                             varulager_msek=l.get("varulager"),
-                             omsattning_msek=l.get("omsattning"),
-                             resultat_msek=l.get("resultat"),
-                             affarsmodell=_a.get("affarsmodell", ""),
-                             orgnr=l.get("orgnr", ""), website=website),
-                        to_options=all_emails)
-                    if send:
-                        ok, err = email_sender.send_email(to, subj, body)
-                        if ok:
-                            try:
-                                prospect = db.promote_lead(l)
-                                pid = prospect.get("id")
-                                log_sent_email(pid, to, subj, body)
-                                if pid:
-                                    db.update_prospect_status(pid, "skickad")
-                            except Exception:
-                                pass
-                            clear_data_cache()
-                            st.success(f"✅ Mejl skickat till {to} — kontakten är nu i "
-                                       f"pipeline (kontaktad).")
-                            st.rerun()
-                        else:
-                            st.error(err)
+    st.caption(f"Visar {len(view)} av {len(pending)} leads "
+               f"— sorterat på {sort_by.lower()}.")
+    return view
