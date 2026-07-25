@@ -20,7 +20,7 @@ MODEL_QUALITY = "claude-sonnet-5"
 
 # Dagcoach-chatten (David Agent) — öppna, resonerande samtal snarare än
 # strukturerad output. Motiverar en starkare modell än rutinagenterna.
-MODEL_COACH = "claude-opus-4-6"
+MODEL_COACH = "claude-opus-5"
 
 # Enkel klassificering/textläsning utan djupare resonemang: affärsmodell-
 # klassning, personläsning på hemsidetext. Billigast och snabbast.
