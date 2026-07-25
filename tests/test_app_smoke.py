@@ -7,6 +7,20 @@ startsidan, byter till varje flik i tur och ordning, och kollar att sidan
 renderar rent (`at.exception` är tomt). Skillnaden är att det nu körs
 automatiskt istället för att behöva klickas igenom för hand varje gång.
 
+VIKTIGT — lösenordsspärren (2026-07-25, hittades av misstag): är
+APP_PASSWORD satt (t.ex. i .streamlit/secrets.toml, som inte är samma sak
+som .env) visar app.py en inloggningssida istället för själva appen.
+Testet måste då kringgå den — annars renderar det bara login-skärmen om
+och om igen, "lyckas" varje gång utan att någonsin ha testat en enda
+riktig sida. (Det är precis vad som hände en gång: testet var grönt i
+flera körningar utan att ha rört Leads-sidan alls.) Kringgåendet sätter
+INTE något lösenord — det sätter samma `_authed`-flagga app.py:s egen
+`_require_login()` sätter EFTER en lyckad inloggning, som en genväg runt
+UI:t. `_verified_started_app()` nedan kollar dessutom explicit att
+sidomenyn (`at.sidebar.radio`) verkligen finns efter kringgåendet, så en
+framtida ändring som bryter kringgåendet upptäcks direkt istället för att
+tyst ge samma falska "OK" igen.
+
 Ingen AI-koppling och ingen kostnad — sidorna gör bara vanliga (gratis)
 Supabase-läsningar vid laddning, precis som en normal sidladdning i
 webbläsaren. AI-anrop (mejlutkast, DM-generering m.m.) triggas bara av
@@ -44,20 +58,33 @@ PAGE_NAMES = [
 ]
 
 
-def _started_app() -> AppTest:
-    """Starta appen (motsvarar att öppna den i webbläsaren första gången)."""
+def _verified_started_app() -> AppTest:
+    """
+    Starta appen och kringgå en ev. lösenordsspärr (se modulens docstring).
+    Kraschar testet direkt — med ett tydligt felmeddelande — om vi av någon
+    anledning fortfarande fastnar på login-sidan efteråt, istället för att
+    tyst fortsätta och ge ett meningslöst grönt test.
+    """
     at = AppTest.from_file(str(APP_PATH), default_timeout=60)
     at.run()
     assert not at.exception, f"Appen kraschade redan vid start: {at.exception}"
+    at.session_state["_authed"] = True
+    at.run()
+    assert not at.exception, f"Appen kraschade efter inloggningskringgåendet: {at.exception}"
+    assert at.sidebar.radio, (
+        "Fortfarande kvar på inloggningssidan — sidomenyn (nav-radioknapparna) "
+        "syns inte. Testet skulle annars bara \"lyckas\" utan att ha testat "
+        "en enda riktig sida. Kolla _require_login()/_authed i app.py."
+    )
     return at
 
 
 def test_startsidan_laddar_utan_krasch():
-    _started_app()
+    _verified_started_app()
 
 
 def test_alla_sidor_renderar_utan_krasch():
-    at = _started_app()
+    at = _verified_started_app()
     for name in PAGE_NAMES:
         at.session_state["nav"] = name
         at.run()

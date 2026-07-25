@@ -25,7 +25,7 @@ import re
 
 import streamlit as st
 
-from agents import people_finder, company_analyzer
+from agents import people_finder, company_analyzer, hiring_signals
 from integrations import apify_research as _apify
 from integrations import email_sender
 from database import supabase_client as db
@@ -191,6 +191,13 @@ def render_lead_card(l, contact_cache, analysis_cache, emailed_bolag):
         # Mejlstatus som synlig bricka på kortet — du ser den utan att öppna panelen.
         if sent_date:
             st.success(f"✅ Mejl skickat {sent_date}")
+
+        # Rekryteringssignal som synlig bricka — den viktigaste öppningen ska
+        # synas direkt, inte gömmas i "Mer"-panelen där den lätt missas.
+        signals = st.session_state.get(f"signals_{lid}")
+        if signals and signals.get("hittat"):
+            roller = ", ".join(signals["roller_matchade"]) or "lager-/inköpsroll"
+            st.success(f"🎯 Rekryterar: {roller} — sannolik köpsignal!")
 
         _render_paste_contact(l, lid, website)
         _render_more_panel(l, lid, website, all_emails, sent_date, analysis_cache)
@@ -528,17 +535,54 @@ def _render_paste_contact(l, lid, website: str) -> None:
 
 def _render_more_panel(l, lid, website: str, all_emails: list,
                        sent_date: str, analysis_cache: dict) -> None:
-    """Sekundära åtgärder samlade under EN panel (tre flikar) så listan blir
+    """Sekundära åtgärder samlade under EN panel (fyra flikar) så listan blir
     lätt att skanna. Öppna bara det kort du jobbar med."""
-    with st.expander("➕ Mer — kontakt, IHA-analys & mejl"):
-        tab_kontakt, tab_analys, tab_mejl = st.tabs(
-            ["✏️ Kontakt", "📊 IHA-analys", "📧 Mejl"])
+    with st.expander("➕ Mer — kontakt, IHA-analys, signaler & mejl"):
+        tab_kontakt, tab_analys, tab_signaler, tab_mejl = st.tabs(
+            ["✏️ Kontakt", "📊 IHA-analys", "🎯 Signaler", "📧 Mejl"])
         with tab_kontakt:
             _render_contact_tab(l, lid, website)
         with tab_analys:
             _render_analysis_tab(l, lid, website, analysis_cache)
+        with tab_signaler:
+            _render_signals_tab(l, lid)
         with tab_mejl:
             _render_email_tab(l, lid, website, all_emails, sent_date, analysis_cache)
+
+
+def _render_signals_tab(l, lid) -> None:
+    """
+    Rekryteringssignal: söker jobbannonser för inköps-/lager-/logistikroller
+    hos bolaget (se agents/hiring_signals.py för resonemanget). Körs bara på
+    knapptryck — kostar en Apify-sökning, aldrig automatiskt.
+    """
+    cached = st.session_state.get(f"signals_{lid}")
+    label = "🎯 Kolla jobbannonser" if not cached else "🔄 Sök igen"
+    if st.button(label, key=f"signals_btn_{lid}"):
+        with st.spinner("Söker jobbannonser (inköp/lager/logistik)..."):
+            try:
+                result = hiring_signals.find_hiring_signals(l.get("bolag", ""))
+                st.session_state[f"signals_{lid}"] = result
+                st.rerun()
+            except Exception as e:
+                st.error(f"Fel: {e}")
+                return
+    if not cached:
+        st.caption("Tryck **Kolla jobbannonser** — söker efter lediga inköps-/"
+                   "lager-/logistiktjänster hos bolaget just nu. En stark "
+                   "köpsignal: antingen saknar de kompetensen, eller växer "
+                   "och moderniserar. (Apify-sökning, drar en liten kredit.)")
+        return
+    if cached["hittat"]:
+        roller = ", ".join(cached["roller_matchade"]) or "lager-/inköpsroll"
+        st.success(f"🎯 Rekryterar: {roller} — sannolik köpsignal!")
+        for t in cached["traffar"]:
+            titel = t.get("title") or t.get("url", "")
+            st.markdown(f"- [{titel}]({t.get('url', '')})")
+            if t.get("description"):
+                st.caption(t["description"][:160])
+    else:
+        st.caption("Inga jobbannonser för inköp/lager/logistik hittade just nu.")
 
 
 def _render_contact_tab(l, lid, website: str) -> None:
