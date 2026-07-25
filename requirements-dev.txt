@@ -1,0 +1,8 @@
+# Verktyg som bara behövs lokalt för att köra tester — INTE i produktion
+# (Streamlit Cloud installerar bara requirements.txt).
+#
+# Installera:  pip install -r requirements-dev.txt
+# Kör tester:  pytest
+
+-r requirements.txt
+pytest>=8.0.0
