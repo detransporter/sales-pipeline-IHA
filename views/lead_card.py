@@ -553,13 +553,14 @@ def _render_more_panel(l, lid, website: str, all_emails: list,
 def _render_signals_tab(l, lid) -> None:
     """
     Rekryteringssignal: söker jobbannonser för inköps-/lager-/logistikroller
-    hos bolaget (se agents/hiring_signals.py för resonemanget). Körs bara på
-    knapptryck — kostar en Apify-sökning, aldrig automatiskt.
+    hos bolaget via Arbetsförmedlingens Platsbank (se agents/hiring_signals.py
+    för resonemanget). Helt gratis — inget Apify, ingen nyckel, ingen kostnad.
+    Körs bara på knapptryck, aldrig automatiskt.
     """
     cached = st.session_state.get(f"signals_{lid}")
     label = "🎯 Kolla jobbannonser" if not cached else "🔄 Sök igen"
     if st.button(label, key=f"signals_btn_{lid}"):
-        with st.spinner("Söker jobbannonser (inköp/lager/logistik)..."):
+        with st.spinner("Söker jobbannonser i Platsbanken (inköp/lager/logistik)..."):
             try:
                 result = hiring_signals.find_hiring_signals(l.get("bolag", ""))
                 st.session_state[f"signals_{lid}"] = result
@@ -568,10 +569,11 @@ def _render_signals_tab(l, lid) -> None:
                 st.error(f"Fel: {e}")
                 return
     if not cached:
-        st.caption("Tryck **Kolla jobbannonser** — söker efter lediga inköps-/"
-                   "lager-/logistiktjänster hos bolaget just nu. En stark "
-                   "köpsignal: antingen saknar de kompetensen, eller växer "
-                   "och moderniserar. (Apify-sökning, drar en liten kredit.)")
+        st.caption("Tryck **Kolla jobbannonser** — söker Arbetsförmedlingens "
+                   "Platsbank efter lediga inköps-/lager-/logistiktjänster hos "
+                   "bolaget just nu. En stark köpsignal: antingen saknar de "
+                   "kompetensen, eller växer och moderniserar. Helt gratis, "
+                   "ingen Apify-kredit dras.")
         return
     if cached["hittat"]:
         roller = ", ".join(cached["roller_matchade"]) or "lager-/inköpsroll"

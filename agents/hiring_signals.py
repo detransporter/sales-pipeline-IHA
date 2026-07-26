@@ -8,74 +8,68 @@ kompetens där — perfekt tajming för en extern lagerhälsoanalys — eller at
 växer och moderniserar sina processer, också bra tajming. En stark, konkret
 köpsignal att öppna samtalet med.
 
-Ren sökning, ingen AI-tolkning — håller kostnaden nere (bara en Apify-sökning
-per kontroll, inga Anthropic-tokens). Körs bara på knapptryck (views/lead_card.py),
-aldrig automatiskt i bulk-bearbetningen, så krediter bara dras på bolag du
-faktiskt överväger.
+Källa: Arbetsförmedlingens Platsbank (JobTech Devs öppna JobSearch-API) —
+HELT GRATIS, ingen API-nyckel, inga Apify-krediter. David har inga Apify-
+krediter och kommer inte ha det, så det här ersätter en tidigare Apify-
+baserad version helt. Nästan alla svenska arbetsgivare annonserar (direkt
+eller via rekryteringsbolag) på Platsbanken, så täckningen är god trots att
+det inte är en generell webbsökning.
+
+Sök by frågar bolagsnamnet som EXAKT FRAS (citattecken) — testat live och
+ger bara annonser som faktiskt nämner bolaget (direkt eller via ett
+rekryteringsbolag), inte bara lösa ordträffar. Rollerna filtreras sedan
+fram lokalt ur varje annons rubrik+text.
 """
 
-from integrations import apify_research as apify
+import requests
 
-# Roller som ingår i själva Google-sökningen — hålls kort med de vanligaste
-# chefstitlarna så frågan inte blir för bred/brusig för Google.
-_QUERY_ROLES = ("inköpschef", "logistikchef", "lagerchef", "supply chain")
+_API_URL = "https://jobsearch.api.jobtechdev.se/search"
 
-# Bredare lista använd för att MÄRKA vilken roll en redan hittad träff gäller
-# (Google kan råka matcha fler roller än de som stod i själva frågan).
-_ROLES = _QUERY_ROLES + (
-    "inköpare", "lageransvarig", "logistikansvarig",
-    "materialplanerare", "lagermedarbetare",
-)
-
-# Ord som visar att träffen faktiskt är en jobbannons, inte t.ex. en
-# nyhetsartikel som råkar nämna en av rollerna.
-_JOB_HINTS = (
-    "jobb", "lediga tjänster", "ledig tjänst", "rekryterar", "söker vi",
-    "vi söker", "annons", "career", "careers", "jobs", "vacancies",
-    "apply", "ansök",
-)
-
-# Kända jobbsajter — en träff härifrån räknas alltid som en jobbannons även
-# om ingen av _JOB_HINTS råkar finnas i den korta beskrivningen Google visar.
-_JOB_DOMAINS = (
-    "arbetsformedlingen.se", "indeed.com", "linkedin.com/jobs", "monster.se",
-    "thehub.io", "careerbuilder", "jobbsafari", "blocket.se/jobb",
-    "metrojobb.se", "academicwork.se", "manpower.se", "randstad.se",
-    "workfinder.se", "cv.se",
+# Roller vars rekrytering signalerar bristande koll på lager/inköp/logistik.
+_ROLES = (
+    "inköpschef", "inköpare", "logistikchef", "logistikansvarig",
+    "lagerchef", "lageransvarig", "supply chain", "materialplanerare",
+    "produktionsplanerare", "lagermedarbetare",
 )
 
 
-def find_hiring_signals(bolag: str, max_results: int = 8) -> dict:
+def find_hiring_signals(bolag: str, max_results: int = 20) -> dict:
     """
-    Sök efter jobbannonser hos bolaget för inköps-/lager-/logistikroller.
+    Sök Arbetsförmedlingens platsbank efter aktiva jobbannonser hos bolaget
+    för inköps-/lager-/logistikroller. Gratis öppet GET-anrop, ingen nyckel.
 
-    Returnerar:
-      {"hittat": bool, "roller_matchade": [...], "traffar": [{"title","url","description"}]}
-    'traffar' är max 5 träffar, redan filtrerade på sådant som ser ut som en
-    riktig jobbannons (inte en nyhetsartikel som råkar nämna rollen).
-    Tom/negativ dict om bolagsnamn saknas eller Apify inte är konfigurerat.
+    Returnerar {"hittat": bool, "roller_matchade": [...], "traffar": [...]}.
+    'traffar' (max 5) är {"title","url","description"}. Tom/negativ dict
+    vid saknat bolagsnamn eller om API:et inte går att nå.
     """
     bolag = (bolag or "").strip()
-    if not bolag or not apify.is_configured():
+    if not bolag:
         return {"hittat": False, "roller_matchade": [], "traffar": []}
 
-    role_query = " OR ".join(f'"{r}"' for r in _QUERY_ROLES)
-    query = f'"{bolag}" ({role_query}) jobb'
-    hits = apify.google_search(query, max_results=max_results)
+    try:
+        r = requests.get(
+            _API_URL, params={"q": f'"{bolag}"', "limit": max_results}, timeout=10)
+        if r.status_code != 200:
+            return {"hittat": False, "roller_matchade": [], "traffar": []}
+        hits = r.json().get("hits", [])
+    except Exception:
+        return {"hittat": False, "roller_matchade": [], "traffar": []}
 
     matched: list[dict] = []
     roles_seen: set[str] = set()
     for h in hits:
-        text = f"{h.get('title','')} {h.get('description','')}".lower()
-        url = (h.get("url") or "").lower()
-        looks_like_job = (any(j in text for j in _JOB_HINTS)
-                          or any(d in url for d in _JOB_DOMAINS))
-        if not looks_like_job:
+        headline = h.get("headline") or ""
+        desc = (h.get("description") or {}).get("text") or ""
+        text = f"{headline} {desc}".lower()
+        role_hits = [r_ for r_ in _ROLES if r_ in text]
+        if not role_hits:
             continue
-        for r in _ROLES:
-            if r in text:
-                roles_seen.add(r)
-        matched.append(h)
+        roles_seen.update(role_hits)
+        matched.append({
+            "title": headline or (h.get("employer") or {}).get("name", ""),
+            "url": h.get("webpage_url", ""),
+            "description": desc[:200].replace("\n", " ").strip(),
+        })
 
     return {
         "hittat": bool(matched),
