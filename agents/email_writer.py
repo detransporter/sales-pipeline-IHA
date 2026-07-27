@@ -55,12 +55,15 @@ GUARANTEE = (
 
 # ── Rolligenkänning ────────────────────────────────────────────────────────────
 
-_VD_KEYS  = ["vd", "ceo", "verksamhetschef", "managing director", "general manager",
-              "ägare", "owner", "grundare", "founder", "president"]
+_VD_KEYS  = ["vd", "verkställande direktör", "ceo", "chief executive",
+              "verksamhetschef", "managing director", "general manager",
+              "ägare", "owner", "grundare", "founder", "president",
+              "coo", "chief operating officer"]
 _CFO_KEYS = ["cfo", "ekonomichef", "finanschef", "controller", "finans", "redovisning",
               "finance manager", "chief financial"]
-_SCM_KEYS = ["inköp", "supply chain", "sc manager", "logistik", "lager", "warehouse",
-              "operations", "purchasing", "procurement", "materialplanerare"]
+_SCM_KEYS = ["inköp", "supply chain", "sc manager", "logistik", "logistics", "lager",
+              "warehouse", "operations", "purchasing", "procurement",
+              "materialplanerare", "category manager"]
 
 
 def _detect_role(titel: str) -> str:
