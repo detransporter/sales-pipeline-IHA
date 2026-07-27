@@ -401,8 +401,15 @@ def render():
                             st.caption(f"  {b['namn']} — {b['roll']}")
 
             if st.button("💾 Spara kvalificerade som leads", type="primary"):
-                _vd_keys = ["vd", "ceo", "verksamhetschef", "managing director",
-                            "general manager", "ägare"]
+                # Samma nyckelordslista som agents/email_writer.py._VD_KEYS — måste
+                # innehålla "verkställande direktör" utskrivet, inte bara "vd",
+                # eftersom Bolagsverkets befattningshavardata nästan alltid
+                # skriver ut det (91 av 687 kontakter hade det stavat ut, se
+                # commit "Fixar rollklassning i mejlskrivaren").
+                _vd_keys = ["vd", "verkställande direktör", "ceo", "chief executive",
+                            "verksamhetschef", "managing director",
+                            "general manager", "ägare", "coo",
+                            "chief operating officer"]
 
                 def _best_person(befattn: list) -> dict:
                     for b in befattn:
