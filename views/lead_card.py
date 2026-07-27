@@ -413,6 +413,10 @@ def _render_find_email_button(l, lid, contact_cache) -> None:
         return
     with st.spinner("Letar e-post på hemsidan (renderar JS vid behov)..."):
         try:
+            # find_emails anropar bara Apify som sista utväg om den gratis
+            # sökningen gav noll adresser — de flesta gånger nollställs det
+            # här utan att något nytt fel någonsin sätts.
+            _apify.clear_last_error()
             contact = _apify.find_emails(l.get("website", ""),
                                          l.get("bolag", ""), render=True)
             contact_cache[lid] = contact
@@ -433,6 +437,9 @@ def _render_find_email_button(l, lid, contact_cache) -> None:
                 st.warning("Hittade hemsidan men ingen publik e-post.")
             else:
                 st.warning("Hittade ingen hemsida/e-post.")
+            _apify_err = _apify.get_last_error()
+            if _apify_err:
+                st.warning(f"⚠️ Apify: {_apify_err}")
             st.rerun()
         except Exception as e:
             st.error(f"Fel: {e}")

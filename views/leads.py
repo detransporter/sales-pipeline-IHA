@@ -65,9 +65,14 @@ def render():
             with st.spinner("Söker bolag..."):
                 try:
                     from agents.lead_finder import suggest_leads
+                    _apify.clear_last_error()
                     existing = db.get_existing_companies()
                     suggestions = suggest_leads(n=int(n_new), existing_companies=existing,
                                                 focus=focus.strip())
+                    _apify_err = _apify.get_last_error()
+                    if _apify_err:
+                        st.warning(f"⚠️ Apify: {_apify_err} — "
+                                  "föll tillbaka på AI-gissning istället för riktiga bolag.")
                     if suggestions:
                         db.insert_lead_suggestions(suggestions)
                         st.success(f"Sparade {len(suggestions)} nya leads.")

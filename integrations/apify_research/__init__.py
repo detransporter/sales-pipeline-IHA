@@ -77,7 +77,6 @@ from ._contact import (
 from ._maps import (
     APIFY_TOKEN,
     GOOGLE_ACTOR,
-    LAST_APIFY_ERROR,
     MAPS_ACTOR,
     RENDER_ACTOR,
     RUN_TIMEOUT,
@@ -85,8 +84,10 @@ from ._maps import (
     _first,
     _normalize_place,
     _run_actor,
+    clear_last_error,
     find_companies,
     find_linkedin_profiles,
+    get_last_error,
     google_search,
     is_configured,
     remaining_usage_usd,

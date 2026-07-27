@@ -237,10 +237,15 @@ def render_email_composer(uid: str, to_default: str, draft_kwargs: dict,
                 nyheter = ""
                 if use_research:
                     with st.spinner("Söker bolagsnyheter..."):
+                        _apify.clear_last_error()
                         nyheter = email_writer.fetch_company_context(
                             draft_kwargs.get("bolag", ""),
                             draft_kwargs.get("bransch", ""),
                         )
+                        _apify_err = _apify.get_last_error()
+                        if not nyheter and _apify_err:
+                            st.warning(f"⚠️ Apify: {_apify_err} — "
+                                      "utkastet skrivs utan nyhetskontext.")
                 d = email_writer.generate_email(**draft_kwargs, nyheter=nyheter)
                 st.session_state[f"subj_{uid}"] = d["subject"]
                 st.session_state[f"body_{uid}"] = d["body"]

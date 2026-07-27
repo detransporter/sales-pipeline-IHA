@@ -28,7 +28,30 @@ RUN_TIMEOUT = 90
 
 # Senaste Apify-felet i klartext (tomt = inget fel). Sätts av _run_actor så att
 # UI:t kan säga t.ex. "krediterna slut" istället för att tyst hitta ingenting.
+#
+# VIKTIGT: läs/nollställ ALLTID via get_last_error()/clear_last_error() nedan,
+# aldrig genom att importera LAST_APIFY_ERROR som ett namn någon annanstans
+# (t.ex. `from ._maps import LAST_APIFY_ERROR` eller via paketets __init__.py).
+# En sådan import kopierar bara STRÄNGVÄRDET vid importtillfället — när
+# _run_actor senare sätter ett nytt fel uppdateras bara denna moduls egen
+# variabel, aldrig kopian någon annanstans. Funktionerna nedan slår istället
+# alltid upp det aktuella värdet, varje gång de anropas.
 LAST_APIFY_ERROR = ""
+
+
+def get_last_error() -> str:
+    """Senaste Apify-felet i klartext (tomt = inget fel sen senaste kontroll)."""
+    return LAST_APIFY_ERROR
+
+
+def clear_last_error() -> None:
+    """
+    Nollställ felflaggan INNAN en ny Apify-kontroll — annars kan ett gammalt
+    fel från en helt annan sökning tidigare i sessionen råka visas som om det
+    gällde den nya kontrollen.
+    """
+    global LAST_APIFY_ERROR
+    LAST_APIFY_ERROR = ""
 
 
 def is_configured() -> bool:
