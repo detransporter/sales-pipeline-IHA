@@ -62,14 +62,24 @@ def get_followups_due() -> list[dict]:
     return due
 
 
-def postpone_followup(prospect_id: str, action: str, until_date) -> None:
+def postpone_followup(prospect_id: str, action: str, until_date, anteckning: str = "",
+                      existing_extra_info: str = "") -> None:
     """
-    Skjut upp nästa kontakt till `until_date` (ett date-objekt).
+    Skjut upp nästa kontakt till `until_date` (ett date-objekt), med en valfri
+    anteckning om VARFÖR (t.ex. "Sa nej till möte nu, men gärna senare i år").
 
     Kontakten försvinner ur uppföljningskön och dyker upp igen på det valda
     datumet. Mekanik: lägg ett dm vars `skickad_at` ankras så att dagräkningen
     når tröskeln exakt på `until_date` (samma paus-trick som autosvar använder).
-    Bra när mottagaren är på semester.
+    Bra när mottagaren är på semester — eller, med en anteckning, av vilken
+    annan anledning som helst.
+
+    Anteckningen sparas (tidsstämplad) i prospects.extra_info — läggs TILL,
+    skriver aldrig över tidigare anteckningar — så den syns när kontakten
+    dyker upp igen, istället för att bara ligga begravd i en dm_history-rad
+    som ingen vy visar. `existing_extra_info` = anroparens redan inlästa
+    prospects.extra_info (anroparen har redan hela posten i minnet, så vi
+    slipper en extra databasläsning här bara för det).
     """
     threshold = {
         "followup_1": FOLLOWUP_1_DAYS,
@@ -77,12 +87,23 @@ def postpone_followup(prospect_id: str, action: str, until_date) -> None:
         "close": CLOSE_DAYS,
     }.get(action, FOLLOWUP_1_DAYS)
     anchor = until_date - timedelta(days=threshold)
-    dm = db.insert_dm(
-        prospect_id,
-        f"📅 Uppskjuten till {until_date.isoformat()} (mottagaren ej tillgänglig, "
-        f"t.ex. semester).",
-        typ="uppskjuten")
+    anteckning = (anteckning or "").strip()
+    dm_text = (f"📅 Uppskjuten till {until_date.isoformat()} — {anteckning}"
+               if anteckning else
+               f"📅 Uppskjuten till {until_date.isoformat()} (mottagaren ej "
+               f"tillgänglig, t.ex. semester).")
+    dm = db.insert_dm(prospect_id, dm_text, typ="uppskjuten")
     db.mark_dm_skickad(dm["id"], at=anchor.isoformat())
+
+    if anteckning:
+        today = datetime.now(timezone.utc).date().isoformat()
+        note = f"[{today}] Uppskjuten till {until_date.isoformat()}: {anteckning}"
+        old = existing_extra_info.strip()
+        combined = f"{old}\n{note}" if old else note
+        try:
+            db.update_prospect(prospect_id, {"extra_info": combined})
+        except Exception:
+            pass  # anteckningen är en bonus — får aldrig blockera själva uppskjutningen
 
 
 RECONTACT_MONTHS = 4  # hur långt fram "Stäng" automatiskt schemalägger återkontakt

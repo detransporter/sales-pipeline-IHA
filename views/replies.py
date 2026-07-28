@@ -373,10 +373,18 @@ def _render_followup_card(item):
                     st.session_state.pop(confirm_key, None)
                     st.rerun()
 
-        # ── Skjut upp: mottagaren ledig? Flytta fram nästa kontakt ──────────
-        with st.expander("📅 Skjut upp (t.ex. semester)"):
+        # ── Skjut upp: mottagaren ledig, eller ett annat skäl? ───────────────
+        with st.expander("📅 Skjut upp (t.ex. semester, eller nej-tack-just-nu)"):
+            _tidigare_anteckningar = (p.get("extra_info") or "").strip()
+            if _tidigare_anteckningar:
+                st.caption("📝 Tidigare anteckningar:")
+                st.caption(_tidigare_anteckningar)
             st.caption("Flytta fram nästa kontaktdatum. Kontakten försvinner ur kön "
                        "och dyker upp igen den dag du väljer.")
+            anteckning = st.text_input(
+                "Anteckning (valfritt) — varför skjuter du upp?",
+                key=f"pp_note_{pid}",
+                placeholder="T.ex. Sa nej till möte nu, men gärna senare i år.")
             pc1, pc2, pc3 = st.columns(3)
             quick = None
             if pc1.button("+1 vecka", key=f"pp1_{pid}", use_container_width=True):
@@ -392,7 +400,9 @@ def _render_followup_card(item):
             target = quick or (valt if do_it else None)
             if target:
                 try:
-                    postpone_followup(pid, item["action"], target)
+                    postpone_followup(pid, item["action"], target,
+                                      anteckning=anteckning,
+                                      existing_extra_info=p.get("extra_info") or "")
                     st.success(f"✅ Uppskjuten — dyker upp igen {target.isoformat()}.")
                     st.rerun()
                 except Exception as e:

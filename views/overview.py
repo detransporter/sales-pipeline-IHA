@@ -106,6 +106,10 @@ def render():
                     "Kategori", KONTAKT_KATEGORIER,
                     index=(KONTAKT_KATEGORIER.index(_cur_kat)
                            if _cur_kat in KONTAKT_KATEGORIER else 0))
+                e_anteckning = st.text_area(
+                    "Anteckning (valfritt)", value=chosen.get("extra_info") or "",
+                    help="Fri text — bygger på sig själv med tidsstämplade rader "
+                         "när du skjuter upp kontakten med ett skäl (📅 Skjut upp).")
                 if st.form_submit_button("💾 Spara ändringar", type="primary"):
                     _namn_ny = e_namn.strip()
                     if not _namn_ny:
@@ -121,6 +125,7 @@ def render():
                                 "linkedin_url": e_li.strip(),
                                 "website": e_website.strip(),
                                 "kategori": e_kategori,
+                                "extra_info": e_anteckning.strip(),
                             }
                             # Skicka ALLA fält, även de som rensats till tomt sträng.
                             # Tidigare filtrerades tomma värden bort ({k:v if v}) så
@@ -167,9 +172,17 @@ def render():
                         "på uppföljning (status *skickad*, *followup_1* eller *followup_2*). "
                         f"Den här kontakten har status **{cur}**.")
             else:
-                st.caption("Mottagaren på semester? Flytta fram nästa kontakt så att "
-                           "bolaget försvinner ur uppföljningsflödet och dyker upp igen "
-                           "den dag du väljer.")
+                _tidigare_anteckningar = (chosen.get("extra_info") or "").strip()
+                if _tidigare_anteckningar:
+                    st.caption("📝 Tidigare anteckningar:")
+                    st.caption(_tidigare_anteckningar)
+                st.caption("Mottagaren på semester, eller ett annat skäl? Flytta fram "
+                           "nästa kontakt så att bolaget försvinner ur uppföljningsflödet "
+                           "och dyker upp igen den dag du väljer.")
+                anteckning = st.text_input(
+                    "Anteckning (valfritt) — varför skjuter du upp?",
+                    key="ov_pp_note",
+                    placeholder="T.ex. Sa nej till möte nu, men gärna senare i år.")
                 sc1, sc2, sc3 = st.columns(3)
                 quick = None
                 if sc1.button("+1 vecka", key="ov_pp1", use_container_width=True):
@@ -188,7 +201,9 @@ def render():
                 target = quick or (valt if do_it else None)
                 if target:
                     try:
-                        postpone_followup(chosen["id"], action, target)
+                        postpone_followup(chosen["id"], action, target,
+                                          anteckning=anteckning,
+                                          existing_extra_info=chosen.get("extra_info") or "")
                         clear_data_cache()
                         st.success(f"✅ Uppskjuten — {chosen.get('bolag','kontakten')} "
                                    f"dyker upp igen {target.isoformat()}.")
