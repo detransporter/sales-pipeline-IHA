@@ -5,6 +5,7 @@ from datetime import date, timedelta
 import streamlit as st
 
 from agents import inbox_watcher
+from agents.dm_generator import generate_followup
 from agents.followup import get_followups_due, process_close, postpone_followup
 from database import supabase_client as db
 from views.shared import (person_link_inline, render_email_composer, log_sent_email,
@@ -489,13 +490,20 @@ def _render_followup_card(item):
         # ── Markera manuellt (följt upp utanför appen) / avböj ──
         with tab_other:
             st.caption("Följde du upp på annat sätt (LinkedIn, mejl i din klient)? "
-                       "Kopiera vid behov och bekräfta här:")
-            st.code(item["message"], language=None)
+                       "Skriv ett förslag att kopiera om du vill, och bekräfta här:")
+            msg_key = f"fu_text_{pid}"
+            if st.button("📝 Skriv uppföljningstext (valfritt)", key=f"fu_gen_{pid}"):
+                with st.spinner("Skriver uppföljningstext..."):
+                    st.session_state[msg_key] = generate_followup(p["namn"], item["action"])
+            fu_text = st.session_state.get(msg_key, "")
+            if fu_text:
+                st.code(fu_text, language=None)
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("✅ Jag har följt upp", key=f"fu_done_{pid}",
                              type="primary", use_container_width=True):
-                    _advance(item["message"], item["action"], item["action"])
+                    _advance(fu_text or "Uppföljning bekräftad manuellt.",
+                             item["action"], item["action"])
             with c2:
                 if st.button("❌ Inte intresserad", key=f"freject_{pid}",
                              use_container_width=True,

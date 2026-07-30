@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta, timezone
 from database import supabase_client as db
-from agents.dm_generator import generate_followup
 
 FOLLOWUP_1_DAYS = 3   # dag 3 efter ursprungligt mejl
 FOLLOWUP_2_DAYS = 4   # dag 7 totalt (4 dagar efter uppföljning 1 skickades)
@@ -27,33 +26,50 @@ def get_followups_due() -> list[dict]:
     Return list of prospects that need action today.
     Each item: {prospect, action, message}
     action: 'followup_1' | 'followup_2' | 'close'
+
+    OBS: 'message' är ALLTID "" här nu. Innan genererades uppföljningstexten
+    (ett Claude-anrop) för VARJE kontakt i listan, redan när den här
+    funktionen kördes — och den körs på nytt vid varenda sidladdning/klick
+    på 🏠 Idag och 💬 Svar & uppföljning (Streamlit kör om hela sidan för
+    varje interaktion). Med 100+ kontakter i kön blev det en storm av
+    Claude-anrop per sidritning — kostade i onödan (texten användes bara i
+    EN av tre flikar i uppföljningskortet) och kunde trigga nätverksfel.
+    Texten genereras nu bara på begäran i views/replies.py:s
+    "✔️ Markera manuellt"-flik (samma knapp-mönster som ringmanuset redan
+    använder) — 📧 Mejla och 📞 Ring genererar redan sin egen text på
+    knapptryck och påverkas inte alls av den här ändringen.
     """
     due = []
 
-    # Status 'skickad' → check if followup_1 is due
     skickade = db.get_prospects(status="skickad")
+    f1_prospects = db.get_prospects(status="followup_1")
+    f2_prospects = db.get_prospects(status="followup_2")
+
+    # EN samlad fråga för senaste dm åt ALLA kontakter, istället för en fråga
+    # per kontakt i varje loop nedan (N+1 — med 200+ kontakter i dessa tre
+    # statusar kunde det trigga Cloudflares skydd framför Supabase).
+    all_ids = [p["id"] for p in skickade + f1_prospects + f2_prospects]
+    latest_dms = db.get_latest_dms_for_prospects(all_ids)
+
+    # Status 'skickad' → check if followup_1 is due
     for p in skickade:
-        dm = db.get_latest_dm(p["id"])
+        dm = latest_dms.get(p["id"])
         if dm and dm.get("skickad_at"):
             days = _days_since(dm["skickad_at"])
             if days >= FOLLOWUP_1_DAYS:
-                msg = generate_followup(p["namn"], "followup_1")
-                due.append({"prospect": p, "action": "followup_1", "message": msg})
+                due.append({"prospect": p, "action": "followup_1", "message": ""})
 
     # Status 'followup_1' → check if followup_2 is due
-    f1_prospects = db.get_prospects(status="followup_1")
     for p in f1_prospects:
-        dm = db.get_latest_dm(p["id"])
+        dm = latest_dms.get(p["id"])
         if dm and dm.get("skickad_at"):
             days = _days_since(dm["skickad_at"])
             if days >= FOLLOWUP_2_DAYS:
-                msg = generate_followup(p["namn"], "followup_2")
-                due.append({"prospect": p, "action": "followup_2", "message": msg})
+                due.append({"prospect": p, "action": "followup_2", "message": ""})
 
     # Status 'followup_2' → close after CLOSE_DAYS
-    f2_prospects = db.get_prospects(status="followup_2")
     for p in f2_prospects:
-        dm = db.get_latest_dm(p["id"])
+        dm = latest_dms.get(p["id"])
         if dm and dm.get("skickad_at"):
             days = _days_since(dm["skickad_at"])
             if days >= CLOSE_DAYS:
