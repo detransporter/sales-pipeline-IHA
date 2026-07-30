@@ -112,10 +112,9 @@ def postpone_followup(prospect_id: str, action: str, until_date, anteckning: str
     db.mark_dm_skickad(dm["id"], at=anchor.isoformat())
 
     if anteckning:
-        today = datetime.now(timezone.utc).date().isoformat()
-        note = f"[{today}] Uppskjuten till {until_date.isoformat()}: {anteckning}"
-        old = existing_extra_info.strip()
-        combined = f"{old}\n{note}" if old else note
+        combined = db.append_note(
+            existing_extra_info,
+            f"Uppskjuten till {until_date.isoformat()}: {anteckning}")
         try:
             db.update_prospect(prospect_id, {"extra_info": combined})
         except Exception:

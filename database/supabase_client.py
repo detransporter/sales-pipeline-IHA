@@ -21,6 +21,23 @@ def get_client() -> Client:
     return _client
 
 
+def append_note(existing: str | None, text: str) -> str:
+    """
+    Lägg till en tidsstämplad anteckningsrad (avsedd för prospects.extra_info)
+    UTAN att skriva över tidigare anteckningar. Samma format används både av
+    "Skjut upp" (uppföljningskön, agents/followup.py) och "Boka återkontakt"
+    (efter ett svar, views/replies.py) så en kontakts anteckningshistorik
+    hänger ihop oavsett vilken väg den kom in via. Ren strängformatering —
+    skriver INGENTING till databasen själv, anroparen gör det via
+    update_prospect(prospect_id, {"extra_info": ...}).
+    """
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).date().isoformat()
+    note = f"[{today}] {text}"
+    old = (existing or "").strip()
+    return f"{old}\n{note}" if old else note
+
+
 # ── Prospects ──────────────────────────────────────────────────────────────
 
 # Valfria, nyare kolumner som en äldre databas kanske saknar. Skrivningar
@@ -658,7 +675,10 @@ def get_inbox_replies(handled: bool = False) -> list[dict]:
         # email/kategori/linkedin_url MÅSTE vara med — views/replies.py läser dem
         # från den inbäddade prospects-relationen för att visa "Skicka via mejl"
         # och kategori-badgen. Saknades tidigare → båda visades aldrig.
-        .select("*, prospects(id, namn, bolag, titel, email, kategori, linkedin_url)")
+        # extra_info likaså — "Boka återkontakt" visar/bygger vidare på tidigare
+        # anteckningar (append_note) direkt på svarskortet.
+        .select("*, prospects(id, namn, bolag, titel, email, kategori, "
+               "linkedin_url, extra_info)")
         .eq("handled", handled)
         .order("received_at", desc=True)
         .execute()

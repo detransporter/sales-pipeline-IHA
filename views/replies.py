@@ -29,6 +29,14 @@ def _reply_subject(prospect_id: str, bolag: str) -> str:
     return f"Re: {bolag}" if bolag else "Re: vårt mejl"
 
 
+def _next_monday() -> date:
+    """Nästa måndag — vad 'efter helgen' betyder. Är det redan måndag idag
+    menas NÄSTA måndag (om 7 dagar), inte samma dag."""
+    today = date.today()
+    days_ahead = (7 - today.weekday()) % 7 or 7
+    return today + timedelta(days=days_ahead)
+
+
 def render():
     st.title("💬 Svar & uppföljning")
 
@@ -239,6 +247,62 @@ def _render_replies_tab():
                             st.rerun()
                         except Exception as e:
                             st.error(f"Fel: {e}")
+
+                # ── Vill bli kontaktad senare (t.ex. "hör av dig efter helgen") ──
+                # Skiljer sig från "Skjut upp" på Uppföljningar-fliken: den gäller
+                # kontakter som INTE svarat än (pausar uppföljningsräkningen). Den
+                # här gäller ett svar som REDAN kommit in, med ett specifikt önskat
+                # datum — bokar återkontakt (nasta_kontakt_datum) och lägger
+                # kontakten i påminnelselistan "🔄 redo för återkontakt" istället.
+                with st.expander("📅 Vill bli kontaktad senare (t.ex. efter helgen)"):
+                    _tidigare = (p.get("extra_info") or "").strip()
+                    if _tidigare:
+                        st.caption("📝 Tidigare anteckningar:")
+                        st.caption(_tidigare)
+                    st.caption("Boka en påminnelse istället för att skicka nu — kontakten "
+                               "dyker upp i återkontakt-listan (🔔 Uppföljningar) den dag "
+                               "du väljer, och svaret markeras som hanterat.")
+                    rc_anteckning = st.text_input(
+                        "Anteckning (valfritt) — vad ville de?",
+                        key=f"rc_note_{r['id']}",
+                        placeholder="T.ex. Vill bli kontaktad efter helgen.")
+                    rcol1, rcol2, rcol3 = st.columns(3)
+                    rc_quick = None
+                    if rcol1.button("Efter helgen", key=f"rc_weekend_{r['id']}",
+                                    use_container_width=True):
+                        rc_quick = _next_monday()
+                    if rcol2.button("+1 vecka", key=f"rc_1w_{r['id']}",
+                                    use_container_width=True):
+                        rc_quick = date.today() + timedelta(days=7)
+                    if rcol3.button("+2 veckor", key=f"rc_2w_{r['id']}",
+                                    use_container_width=True):
+                        rc_quick = date.today() + timedelta(days=14)
+                    rc_valt = st.date_input("…eller välj datum",
+                                            value=date.today() + timedelta(days=7),
+                                            min_value=date.today() + timedelta(days=1),
+                                            key=f"rc_date_{r['id']}")
+                    rc_go = st.button("📅 Boka återkontakt", key=f"rc_go_{r['id']}",
+                                      type="primary")
+                    rc_target = rc_quick or (rc_valt if rc_go else None)
+                    if rc_target:
+                        if not pid:
+                            st.warning("Kunde inte koppla svaret till en kontakt — kan inte boka.")
+                        else:
+                            try:
+                                db.set_next_contact_date(pid, rc_target.isoformat())
+                                note_text = (f"Ville kontaktas igen {rc_target.isoformat()}"
+                                            + (f": {rc_anteckning}" if rc_anteckning.strip()
+                                               else ""))
+                                db.update_prospect(pid, {
+                                    "extra_info": db.append_note(
+                                        p.get("extra_info") or "", note_text)})
+                                db.update_prospect_status(pid, "svar_ja")
+                                db.mark_reply_handled(r["id"])
+                                st.success(f"✅ Bokat — {bolag or namn} dyker upp igen "
+                                           f"{rc_target.isoformat()}.")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Fel: {e}")
 
 
 def _render_followups_tab():
