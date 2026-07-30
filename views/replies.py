@@ -203,7 +203,7 @@ def _render_replies_tab():
                     b0, b1, b2 = st.columns([2, 2, 1])
                     with b0:
                         if st.button(f"📨 Skicka via mejl", key=f"send_{r['id']}",
-                                     type="primary", use_container_width=True,
+                                     type="primary", width="stretch",
                                      help=f"Skickar texten ovan till {email} och "
                                           f"markerar svaret som hanterat."):
                             from integrations import email_sender
@@ -228,7 +228,7 @@ def _render_replies_tab():
                 with b1:
                     if st.button("✅ Klar / hanterad", key=f"done_{r['id']}",
                                  type="primary" if not email else "secondary",
-                                 use_container_width=True):
+                                 width="stretch"):
                         try:
                             db.mark_reply_handled(r["id"])
                             st.success("Markerad som hanterad!")
@@ -237,7 +237,7 @@ def _render_replies_tab():
                             st.error(f"Fel: {e}")
                 with b2:
                     if st.button("❌ Avböj", key=f"reject_reply_{r['id']}",
-                                 use_container_width=True,
+                                 width="stretch",
                                  help="Kontakten är inte intresserad — stäng och arkivera."):
                         try:
                             db.mark_reply_handled(r["id"])
@@ -269,13 +269,13 @@ def _render_replies_tab():
                     rcol1, rcol2, rcol3 = st.columns(3)
                     rc_quick = None
                     if rcol1.button("Efter helgen", key=f"rc_weekend_{r['id']}",
-                                    use_container_width=True):
+                                    width="stretch"):
                         rc_quick = _next_monday()
                     if rcol2.button("+1 vecka", key=f"rc_1w_{r['id']}",
-                                    use_container_width=True):
+                                    width="stretch"):
                         rc_quick = date.today() + timedelta(days=7)
                     if rcol3.button("+2 veckor", key=f"rc_2w_{r['id']}",
-                                    use_container_width=True):
+                                    width="stretch"):
                         rc_quick = date.today() + timedelta(days=14)
                     rc_valt = st.date_input("…eller välj datum",
                                             value=date.today() + timedelta(days=7),
@@ -362,7 +362,7 @@ def _render_followups_tab():
                        f"{(p.get('nasta_kontakt_datum') or '')[:10]}")
             with col2:
                 if st.button("🔁 Starta om", key=f"recontact_{p['id']}",
-                             use_container_width=True):
+                             width="stretch"):
                     try:
                         db.restart_cadence(p["id"])
                         st.success(f"{p.get('bolag','Kontakten')} tillbaka i "
@@ -417,7 +417,7 @@ def _render_followup_card(item):
             confirm_key = f"fu_reject_confirm_{pid}"
             if not st.session_state.get(confirm_key):
                 if st.button("🚫 Avvisa", key=f"fu_reject_{pid}",
-                             use_container_width=True,
+                             width="stretch",
                              help="Markera som inte intresserad och ta bort ur "
                                   "uppföljningskön."):
                     st.session_state[confirm_key] = True
@@ -425,7 +425,7 @@ def _render_followup_card(item):
             else:
                 st.caption("Säker?")
                 if st.button("✅ Ja, avvisa", key=f"fu_reject_yes_{pid}",
-                             type="primary", use_container_width=True):
+                             type="primary", width="stretch"):
                     try:
                         db.update_prospect_status(pid, "avbojd")
                         st.session_state.pop(confirm_key, None)
@@ -434,7 +434,7 @@ def _render_followup_card(item):
                     except Exception as e:
                         st.error(f"Fel: {e}")
                 if st.button("Avbryt", key=f"fu_reject_no_{pid}",
-                             use_container_width=True):
+                             width="stretch"):
                     st.session_state.pop(confirm_key, None)
                     st.rerun()
 
@@ -452,12 +452,15 @@ def _render_followup_card(item):
                 placeholder="T.ex. Sa nej till möte nu, men gärna senare i år.")
             pc1, pc2, pc3 = st.columns(3)
             quick = None
-            if pc1.button("+1 vecka", key=f"pp1_{pid}", use_container_width=True):
+            if pc1.button("+1 vecka", key=f"pp1_{pid}", width="stretch"):
                 quick = date.today() + timedelta(days=7)
-            if pc2.button("+2 veckor", key=f"pp2_{pid}", use_container_width=True):
+            if pc2.button("+2 veckor", key=f"pp2_{pid}", width="stretch"):
                 quick = date.today() + timedelta(days=14)
-            if pc3.button("Efter 15 aug", key=f"pp3_{pid}", use_container_width=True):
-                quick = max(date.today() + timedelta(days=1), date(date.today().year, 8, 15))
+            # "+1 månad" i stället för det tidigare "Efter 15 aug": det datumet
+            # gav rätt resultat bara fram till mitten av augusti — resten av året
+            # betydde samma knapp plötsligt "imorgon", utan att det syntes.
+            if pc3.button("+1 månad", key=f"pp3_{pid}", width="stretch"):
+                quick = date.today() + timedelta(days=30)
             valt = st.date_input("…eller välj datum", value=date.today() + timedelta(days=14),
                                  min_value=date.today() + timedelta(days=1),
                                  key=f"pp_date_{pid}")
@@ -565,12 +568,12 @@ def _render_followup_card(item):
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("✅ Jag har följt upp", key=f"fu_done_{pid}",
-                             type="primary", use_container_width=True):
+                             type="primary", width="stretch"):
                     _advance(fu_text or "Uppföljning bekräftad manuellt.",
                              item["action"], item["action"])
             with c2:
                 if st.button("❌ Inte intresserad", key=f"freject_{pid}",
-                             use_container_width=True,
+                             width="stretch",
                              help="Ta bort ur uppföljningskön."):
                     try:
                         db.update_prospect_status(pid, "avbojd")

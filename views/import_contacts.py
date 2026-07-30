@@ -98,7 +98,7 @@ def _render_excel_import():
 
         display_cols = ["namn", "titel", "bolag", "bransch", "score"]
         available = [c for c in display_cols if c in df_scored.columns]
-        st.dataframe(df_scored[available], use_container_width=True, hide_index=True)
+        st.dataframe(df_scored[available], hide_index=True)
 
         kat = st.selectbox("Kategori för alla importerade", KONTAKT_KATEGORIER, index=0)
         if st.button("💾 Spara till Supabase", type="primary"):

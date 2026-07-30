@@ -295,7 +295,7 @@ def render():
                 f"{_saved.get('read_count') or 0} djuplästa · {_upd}")
         rc1, rc2 = st.columns(2)
         with rc1:
-            if st.button("↩️ Återuppta sparad sökning", use_container_width=True,
+            if st.button("↩️ Återuppta sparad sökning", width="stretch",
                          help="Laddar poolen och de redan djuplästa bolagen — "
                               "ingen ny sökning, fortsätt granska fler direkt."):
                 st.session_state["screen_pool"] = _saved.get("pool") or []
@@ -307,7 +307,7 @@ def render():
                           max_marginal, hard_margin)
                 st.rerun()
         with rc2:
-            if st.button("🗑️ Släng sparad sökning", use_container_width=True):
+            if st.button("🗑️ Släng sparad sökning", width="stretch"):
                 try:
                     db.clear_screen_session()
                 except Exception:
@@ -358,7 +358,7 @@ def render():
             _kvar = _pool_total - _read
             if _kvar > 0:
                 if st.button(f"🔎 Granska fler bolag (nästa {min(int(n_companies), _kvar)} "
-                             f"av {_kvar} kvar)", use_container_width=True):
+                             f"av {_kvar} kvar)", width="stretch"):
                     nxt = st.session_state["screen_pool"][_read:_read + int(n_companies)]
                     st.session_state["screen_fins"] += _deep_read_candidates(nxt)
                     st.session_state["screen_read"] = _read + len(nxt)
@@ -369,7 +369,7 @@ def render():
             else:
                 st.caption(f"✔️ Alla {_pool_total} bolag i bransch/band är djuplästa.")
         with bc2:
-            if st.button("♻️ Uppdatera med nuvarande filter", use_container_width=True,
+            if st.button("♻️ Uppdatera med nuvarande filter", width="stretch",
                          help="Kör om lagerandel/marginal-filtret på redan hämtade bolag "
                               "— direkt, ingen ny sökning."):
                 _rescreen(oms_min, oms_max, max_anstallda, min_lagerandel,
@@ -388,7 +388,7 @@ def render():
                     "IHA-score": r.get("iha_score"),
                     "Orgnr": r.get("orgnr"),
                 } for r in q
-            ]), use_container_width=True, hide_index=True)
+            ]), width="stretch", hide_index=True)
 
             # Befattningshavare (VD + ledning direkt från Allabolag/Bolagsverket)
             all_befattn = [(r["bolag"], r.get("befattningshavare") or []) for r in q

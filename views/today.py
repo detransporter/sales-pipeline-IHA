@@ -59,7 +59,7 @@ def render():
                 else:
                     st.caption(beskr)
                 st.button(f"{knapp} →", key=f"go_{i}", on_click=goto, args=(target,),
-                          use_container_width=True)
+                          width="stretch")
 
     st.divider()
     st.caption("Tips: följ korten i ordning — hitta bolag → godkänn leads → skicka DM → "
@@ -119,7 +119,7 @@ def _render_activity(days: int = 14):
                       annotation_text=f"Mål {DAILY_GOAL}", annotation_position="top left")
         fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), height=220,
                           yaxis_title=None, xaxis_title=None, showlegend=False)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig)
     except Exception:
         # Faller tillbaka på enkel graf om plotly saknas.
         st.bar_chart(df.set_index("dag")["antal"], height=200, color="#22c55e")

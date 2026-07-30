@@ -164,7 +164,11 @@ def render_lead_card(l, contact_cache, analysis_cache, emailed_bolag):
     telefon = cached.get("telefon") or l.get("telefon") or ""
 
     with st.container(border=True):
-        cols = st.columns([3, 1, 1, 1, 1])
+        # Bredderna är INTE lika: "🔍 Kontaktuppgifter" är dubbelt så lång som
+        # "❌ Avböj" och bröts mitt i ordet ("Kontaktuppgifte r") när alla fyra
+        # knappkolumner var lika breda. Varje kolumn får nu plats efter sin
+        # etikett.
+        cols = st.columns([3, 1.6, 1.1, 1.1, 1])
         with cols[0]:
             _render_identity(l, website)
             _render_emails(l, lid, emails, guessed)
@@ -357,7 +361,7 @@ def _render_pending_person_choice(l, lid, website: str) -> None:
 def _render_find_contact_button(l, lid) -> None:
     """🔍 Kontaktuppgifter — läser hemsidan efter rätt person."""
     if not (lid and st.button("🔍 Kontaktuppgifter", key=f"person_{lid}",
-                              use_container_width=True)):
+                              width="stretch")):
         return
     with st.spinner("Läser bolagets hemsida efter rätt person..."):
         try:
@@ -409,7 +413,7 @@ def _render_find_contact_button(l, lid) -> None:
 def _render_find_email_button(l, lid, contact_cache) -> None:
     """✉️ E-post — letar e-post på hemsidan (renderar JS vid behov)."""
     if not (lid and st.button("✉️ E-post", key=f"email_{lid}",
-                              use_container_width=True)):
+                              width="stretch")):
         return
     with st.spinner("Letar e-post på hemsidan (renderar JS vid behov)..."):
         try:
@@ -448,7 +452,7 @@ def _render_find_email_button(l, lid, contact_cache) -> None:
 def _render_approve_button(l, lid) -> None:
     """✅ Godkänn — flyttar leadet till pipeline."""
     if not (lid and st.button("✅ Godkänn", key=f"approve_{lid}",
-                              type="primary", use_container_width=True)):
+                              type="primary", width="stretch")):
         return
     try:
         db.promote_lead(l)
@@ -462,7 +466,7 @@ def _render_approve_button(l, lid) -> None:
 def _render_reject_button(lid) -> None:
     """❌ Avböj — tar bort leadet ur listan."""
     if not (lid and st.button("❌ Avböj", key=f"reject_{lid}",
-                              use_container_width=True,
+                              width="stretch",
                               help="Passar inte (fel bransch/storlek e.d.) — "
                                    "tas bort ur listan.")):
         return

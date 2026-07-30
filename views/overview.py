@@ -76,7 +76,7 @@ def render():
         df = pd.DataFrame(prospects)
         display_cols = [c for c in ["kategori", "namn", "titel", "bolag", "bransch",
                                     "score", "status", "created_at"] if c in df.columns]
-        st.dataframe(df[display_cols], use_container_width=True, hide_index=True)
+        st.dataframe(df[display_cols], hide_index=True)
 
         st.subheader("Redigera kontakt")
         prospect_labels = unique_prospect_labels(prospects)
@@ -185,13 +185,14 @@ def render():
                     placeholder="T.ex. Sa nej till möte nu, men gärna senare i år.")
                 sc1, sc2, sc3 = st.columns(3)
                 quick = None
-                if sc1.button("+1 vecka", key="ov_pp1", use_container_width=True):
+                if sc1.button("+1 vecka", key="ov_pp1", width="stretch"):
                     quick = date.today() + timedelta(days=7)
-                if sc2.button("+2 veckor", key="ov_pp2", use_container_width=True):
+                if sc2.button("+2 veckor", key="ov_pp2", width="stretch"):
                     quick = date.today() + timedelta(days=14)
-                if sc3.button("Efter 15 aug", key="ov_pp3", use_container_width=True):
-                    quick = max(date.today() + timedelta(days=1),
-                                date(date.today().year, 8, 15))
+                # Se kommentaren i views/replies.py — "Efter 15 aug" gav fel
+                # datum större delen av året.
+                if sc3.button("+1 månad", key="ov_pp3", width="stretch"):
+                    quick = date.today() + timedelta(days=30)
                 valt = st.date_input("…eller välj datum",
                                      value=date.today() + timedelta(days=14),
                                      min_value=date.today() + timedelta(days=1),
@@ -241,7 +242,7 @@ def render():
                     st.caption("Per vinkel:")
                     st.dataframe(pd.DataFrame([
                         {"vinkel": k, **v} for k, v in insight["angle_stats"].items()
-                    ]), use_container_width=True, hide_index=True)
+                    ]), width="stretch", hide_index=True)
             except Exception as e:
                 st.caption(f"Ingen inlärningsdata ännu: {e}")
 
@@ -267,7 +268,7 @@ def render():
                             "Bolag": pr.get("bolag", ""),
                             "Ämne": amne,
                         })
-                    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+                    st.dataframe(pd.DataFrame(rows), hide_index=True)
                 else:
                     st.caption("Inga mejl skickade ännu.")
             except Exception as e:

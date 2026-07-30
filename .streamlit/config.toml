@@ -1,0 +1,23 @@
+# Appens utseende. Den här filen är INTE hemlig (till skillnad från
+# secrets.toml bredvid) och ska ligga i git — Streamlit Cloud läser den
+# automatiskt vid deploy.
+#
+# VIKTIGT — testat 2026-07-30, inte gissat: sätter man färger direkt under
+# [theme] tvingas appen till LJUST läge, även om `base` utelämnas. Därför
+# ligger färgerna i [theme.light]/[theme.dark] i stället — då följer appen
+# fortfarande datorns eget läge, och får rätt accentfärg i båda.
+
+[theme.light]
+# Accentfärg — primärknappar (Godkänn, Skicka mejl, Boka möte), reglage och
+# markerad meny. Samma blå som "bokat möte" i kalendern
+# (views/meetings.py:_STATUS_COLOR) så färgspråket hänger ihop:
+# blå = gör det här nu, grön = klart, röd = avbrutet.
+primaryColor = "#2563eb"
+
+[theme.dark]
+# Ljusare blå i mörkt läge — #2563eb blir för mörk mot mörk bakgrund.
+primaryColor = "#3b82f6"
+
+[browser]
+# Ingen användningsstatistik till Streamlit.
+gatherUsageStats = false

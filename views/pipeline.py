@@ -64,10 +64,10 @@ def _deal_form(editing: dict | None = None):
 
     b1, b2 = st.columns([2, 1])
     save = b1.button("💾 Spara deal" if not editing else "💾 Uppdatera deal",
-                     type="primary", use_container_width=True, key=f"dl_save_{fk}")
+                     type="primary", width="stretch", key=f"dl_save_{fk}")
     cancel = False
     if editing:
-        cancel = b2.button("Avbryt redigering", use_container_width=True,
+        cancel = b2.button("Avbryt redigering", width="stretch",
                            key=f"dl_cancel_{fk}")
     values = {
         "contact_name": name.strip(),
@@ -186,7 +186,7 @@ def render():
     ))
     fig.update_layout(title="Hela tratten: outreach → affär",
                       margin=dict(l=10, r=10, t=40, b=10), height=340)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig)
 
     # ── Deal-lista med inline stage-flytt ────────────────────────────────────
     st.subheader("Alla deals")

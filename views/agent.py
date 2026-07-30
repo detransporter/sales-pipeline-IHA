@@ -119,9 +119,9 @@ def render():
     # ── 1. Dagstart ──────────────────────────────────────────────────────────
     st.subheader("☀️ Dagstart")
     c_start, c_reset = st.columns([3, 1])
-    start_btn = c_start.button("☀️ Generera dagstart", use_container_width=True,
+    start_btn = c_start.button("☀️ Generera dagstart", width="stretch",
                                disabled=st.session_state["agent_dagstart"] is not None)
-    if c_reset.button("🔄 Ny dagstart", use_container_width=True):
+    if c_reset.button("🔄 Ny dagstart", width="stretch"):
         st.session_state["agent_dagstart"] = None
         st.rerun()
 
@@ -268,7 +268,7 @@ def render():
             height=140,
             placeholder="T.ex: Ringde Anna på Volvo Parts – positiv men inte redo än. "
                         "Skickade 3 mejl. Fastnade i inkorgen 2 timmar...")
-        if st.button("🌙 Spara kvällsreflektion", use_container_width=True):
+        if st.button("🌙 Spara kvällsreflektion", width="stretch"):
             if not reflection.strip():
                 st.warning("Skriv något om dagen först.")
             else:

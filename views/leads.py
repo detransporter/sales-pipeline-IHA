@@ -99,7 +99,7 @@ def _render_bulk_enrich(pending: list, contact_cache: dict) -> None:
     with bcol:
         run_now = st.button(f"🚀 Bearbeta {len(need_work)} nya leads",
                             type="primary", key="bulk_enrich",
-                            use_container_width=True)
+                            width="stretch")
     with tcol:
         auto = st.toggle(
             "⚡ Auto", key="auto_enrich",

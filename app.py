@@ -28,9 +28,8 @@ try:
 except Exception:
     pass
 
-from database import supabase_client as db
 from views import (today, find_companies, leads, replies, meetings, pipeline,
-                   agent, overview, import_contacts)
+                   agent, overview, import_contacts, shared)
 
 st.set_page_config(
     page_title="Sales pipeline - IHA",
@@ -113,7 +112,11 @@ page = st.sidebar.radio("Navigation", list(PAGES.keys()), key="nav",
 
 st.sidebar.divider()
 try:
-    stats = db.get_pipeline_stats()
+    # Cachad (45 s) — sidopanelen ritas om vid VARJE klick var som helst i
+    # appen, så den okachade db.get_pipeline_stats() läste hela prospects-
+    # tabellen varje gång. Cachen töms av shared.clear_data_cache() efter
+    # varje skrivning, så siffrorna är ändå färska direkt efter en åtgärd.
+    stats = shared.cached_pipeline_stats()
     st.sidebar.metric("Kontaktade", stats["kontaktade"])
     st.sidebar.metric("Möten bokade", stats["moten"])
     st.sidebar.metric("Konvertering", f"{stats['konvertering']}%")
