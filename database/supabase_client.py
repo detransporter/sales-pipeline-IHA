@@ -194,6 +194,40 @@ def get_latest_dm(prospect_id: str) -> dict | None:
     return result.data[0] if result.data else None
 
 
+def get_latest_dms_for_prospects(prospect_ids: list[str]) -> dict[str, dict]:
+    """
+    Senaste dm_history-raden per kontakt, i EN databasfråga istället för en
+    fråga per kontakt.
+
+    `agents.followup.get_followups_due()` gjorde tidigare en `get_latest_dm()`-
+    fråga per kontakt i en loop (N+1) — med 200+ kontakter i status skickad/
+    followup_1/followup_2 blev det en störtflod av snabbt avfyrade anrop som
+    kunde trigga Cloudflares skydd framför Supabase (sågs i appen som
+    "ConnectionTerminated" resp. "400 Bad Request ... cloudflare").
+
+    Returnerar {prospect_id: senaste_dm_dict}. Kontakter utan någon dm_history
+    saknas helt enkelt i dictet (inget None-värde att kolla för).
+    """
+    if not prospect_ids:
+        return {}
+    client = get_client()
+    result = (
+        client.table("dm_history")
+        .select("*")
+        .in_("prospect_id", prospect_ids)
+        .order("created_at", desc=True)
+        .execute()
+    )
+    latest: dict[str, dict] = {}
+    for row in result.data:
+        pid = row.get("prospect_id")
+        # Radordningen är desc på created_at → första träffen per pid ÄR
+        # den senaste. Skriv aldrig över en redan hittad (nyare) rad.
+        if pid and pid not in latest:
+            latest[pid] = row
+    return latest
+
+
 # ── Meetings ───────────────────────────────────────────────────────────────
 
 def insert_meeting(prospect_id: str, datum: str) -> dict:
