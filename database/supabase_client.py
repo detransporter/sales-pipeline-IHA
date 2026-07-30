@@ -247,12 +247,13 @@ def get_latest_dms_for_prospects(prospect_ids: list[str]) -> dict[str, dict]:
 
 # ── Meetings ───────────────────────────────────────────────────────────────
 
-def insert_meeting(prospect_id: str, datum: str) -> dict:
+def insert_meeting(prospect_id: str, datum: str, anteckningar: str = "") -> dict:
     client = get_client()
     result = client.table("meetings").insert({
         "prospect_id": prospect_id,
         "datum": datum,
         "status": "bokad",
+        "anteckningar": anteckningar,
     }).execute()
     return result.data[0] if result.data else {}
 

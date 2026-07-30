@@ -150,10 +150,15 @@ def _render_new_meeting_tab() -> None:
     if prospect_options:
         chosen_p = st.selectbox("Kontakt", list(prospect_options.keys()))
         meeting_date = st.date_input("Datum", value=date.today())
+        new_notes = st.text_area(
+            "Anteckningar (valfritt)", key="new_meeting_notes",
+            placeholder="T.ex. vad mötet ska handla om, eller vad du vill ha med dig in.",
+            help="Går att ändra senare via kalendern eller listan — men bekvämt "
+                 "att skriva direkt medan du kommer ihåg det.")
         if st.button("📅 Boka möte", type="primary"):
             try:
                 p = prospect_options[chosen_p]
-                db.insert_meeting(p["id"], meeting_date.isoformat())
+                db.insert_meeting(p["id"], meeting_date.isoformat(), anteckningar=new_notes)
                 db.update_prospect_status(p["id"], "mote_bokat",
                                           meeting_date=meeting_date.isoformat())
                 st.success(f"Möte bokat med {p['namn']} den {meeting_date}!")
