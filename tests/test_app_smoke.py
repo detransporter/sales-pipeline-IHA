@@ -16,10 +16,9 @@ riktig sida. (Det är precis vad som hände en gång: testet var grönt i
 flera körningar utan att ha rört Leads-sidan alls.) Kringgåendet sätter
 INTE något lösenord — det sätter samma `_authed`-flagga app.py:s egen
 `_require_login()` sätter EFTER en lyckad inloggning, som en genväg runt
-UI:t. `_verified_started_app()` nedan kollar dessutom explicit att
-sidomenyn (`at.sidebar.radio`) verkligen finns efter kringgåendet, så en
-framtida ändring som bryter kringgåendet upptäcks direkt istället för att
-tyst ge samma falska "OK" igen.
+UI:t. `_verified_started_app()` nedan kollar dessutom att den renderade
+titeln inte är inloggningssidans, så en framtida ändring som bryter
+kringgåendet upptäcks direkt istället för att tyst ge samma falska "OK".
 
 Ingen AI-koppling och ingen kostnad — sidorna gör bara vanliga (gratis)
 Supabase-läsningar vid laddning, precis som en normal sidladdning i
@@ -71,10 +70,15 @@ def _verified_started_app() -> AppTest:
     at.session_state["_authed"] = True
     at.run()
     assert not at.exception, f"Appen kraschade efter inloggningskringgåendet: {at.exception}"
-    assert at.sidebar.radio, (
-        "Fortfarande kvar på inloggningssidan — sidomenyn (nav-radioknapparna) "
-        "syns inte. Testet skulle annars bara \"lyckas\" utan att ha testat "
-        "en enda riktig sida. Kolla _require_login()/_authed i app.py."
+    # Kolla på titelns INNEHÅLL, inte bara att någon titel finns —
+    # inloggningssidan ritar också en st.title ("🔒 Sales pipeline - IHA"), så
+    # ett blott `assert at.title` hade godkänts även där och gett exakt samma
+    # falska grönt som en gång tidigare (se docstringen ovan).
+    titles = [t.value for t in at.title]
+    assert titles and not any("🔒" in t for t in titles), (
+        f"Fastnade på inloggningssidan (titlar: {titles}). Testet skulle annars "
+        "bara \"lyckas\" utan att ha testat en enda riktig sida. Kolla "
+        "_require_login()/_authed i app.py."
     )
     return at
 
@@ -86,6 +90,9 @@ def test_startsidan_laddar_utan_krasch():
 def test_alla_sidor_renderar_utan_krasch():
     at = _verified_started_app()
     for name in PAGE_NAMES:
-        at.session_state["nav"] = name
+        # Samma väg som appens egna "Gå till"-knappar: shared.goto() sätter
+        # flaggan, app.py gör st.switch_page. Testar alltså den RIKTIGA
+        # navigeringsvägen, inte bara att sidfunktionen går att anropa.
+        at.session_state["_goto"] = name
         at.run()
         assert not at.exception, f"Sidan '{name}' kraschade: {at.exception}"

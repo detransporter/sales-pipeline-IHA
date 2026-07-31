@@ -63,10 +63,17 @@ def _require_login() -> bool:
     token = _auth_token(pw)
 
     # Giltig biljett i URL:en → inloggad (överlever omstarter och deploys).
+    # Flaggan MÅSTE sättas här, inte bara vid lösenordsinmatning: st.navigation
+    # raderar hela query-strängen vid varje menyklick, så utan flaggan hade
+    # första klicket i menyn kastat ut dig till inloggningsrutan igen (biljetten
+    # borta ur URL:en OCH ingen session att falla tillbaka på).
     if hmac.compare_digest(st.query_params.get("auth", ""), token):
+        st.session_state["_authed"] = True
         return True
 
-    # Inloggad i denna session men biljetten saknas i URL:en → lägg dit den.
+    # Inloggad i denna session men biljetten saknas i URL:en (t.ex. just efter
+    # ett menyklick) → lägg tillbaka den, så inloggningen överlever även en
+    # omstart/deploy när sessionsminnet nollställs.
     if st.session_state.get("_authed"):
         st.query_params["auth"] = token
         return True
@@ -87,30 +94,57 @@ if not _require_login():
     st.stop()
 
 
-# ── Sidor: namn i menyn → funktionen som ritar sidan ─────────────────────────
+# ── Sidor ────────────────────────────────────────────────────────────────────
 # Ordningen här är ordningen i menyn (tratten uppifrån och ner + verktyg sist).
+#
+# Nycklarna är oförändrade sedan menyn var en radioknapp — shared.goto() och
+# alla "Gå till"-knappar i views/ använder dem, så de får inte döpas om utan
+# att anropsställena ändras samtidigt.
+#
+# url_path MÅSTE anges explicit: alla sidfunktioner heter `render`, och utan
+# url_path härleder Streamlit adressen ur funktionsnamnet — då skulle alla nio
+# sidor krocka på samma adress.
 PAGES = {
-    "🏠 Idag": today.render,
-    "🔍 Hitta bolag": find_companies.render,
-    "🌱 Leads": leads.render,
-    "💬 Svar & uppföljning": replies.render,
-    "📅 Möten": meetings.render,
-    "💰 Pipeline": pipeline.render,
-    "🧠 David Agent": agent.render,
-    "📊 Översikt": overview.render,
-    "📥 Kontakter": import_contacts.render,
+    "🏠 Idag": st.Page(today.render, title="Idag", icon="🏠",
+                       url_path="idag", default=True),
+    "🔍 Hitta bolag": st.Page(find_companies.render, title="Hitta bolag",
+                              icon="🔍", url_path="hitta-bolag"),
+    "🌱 Leads": st.Page(leads.render, title="Leads", icon="🌱",
+                        url_path="leads"),
+    "💬 Svar & uppföljning": st.Page(replies.render, title="Svar & uppföljning",
+                                     icon="💬", url_path="svar"),
+    "📅 Möten": st.Page(meetings.render, title="Möten", icon="📅",
+                        url_path="moten"),
+    "💰 Pipeline": st.Page(pipeline.render, title="Pipeline", icon="💰",
+                           url_path="pipeline"),
+    "🧠 David Agent": st.Page(agent.render, title="David Agent", icon="🧠",
+                              url_path="agent"),
+    "📊 Översikt": st.Page(overview.render, title="Översikt", icon="📊",
+                           url_path="oversikt"),
+    "📥 Kontakter": st.Page(import_contacts.render, title="Kontakter",
+                            icon="📥", url_path="kontakter"),
 }
 
 
+# ── Sidbyte begärt av en "Gå till"-knapp ─────────────────────────────────────
+# shared.goto() sätter bara flaggan; bytet sker HÄR, i skriptets huvudflöde.
+# st.switch_page() är en tyst no-op inuti en on_click-callback (den kastar
+# inget fel — knappen ser bara ut att inte göra något), därför denna omväg.
+_pending = st.session_state.pop("_goto", None)
+if _pending in PAGES:
+    st.switch_page(PAGES[_pending])
+
+
 # ── Sidopanel: navigering + snabbstatistik ───────────────────────────────────
+# st.navigation ritar ALLTID menyn högst upp i sidopanelen, oavsett var den
+# anropas — en app-titel före den hamnar alltså under menyn och ser felplacerad
+# ut. Titeln är därför borttagen: menyn är tillräcklig identitet, och
+# webbläsarfliken säger redan "Sales pipeline - IHA".
+nav = st.navigation(list(PAGES.values()))
 
-st.sidebar.title("📊 Sales pipeline - IHA")
-st.sidebar.divider()
-st.sidebar.caption("Arbetsflöde — uppifrån och ner")
-page = st.sidebar.radio("Navigation", list(PAGES.keys()), key="nav",
-                        label_visibility="collapsed")
-
-st.sidebar.divider()
+# Ingen st.sidebar.divider() här — menyn ritar redan ett avslutande streck,
+# och ytterligare ett gav två linjer med ett tomt glapp emellan.
+st.sidebar.caption("Läget just nu")
 try:
     # Cachad (45 s) — sidopanelen ritas om vid VARJE klick var som helst i
     # appen, så den okachade db.get_pipeline_stats() läste hela prospects-
@@ -149,5 +183,6 @@ if _v:
 
 
 # ── Rita vald sida ───────────────────────────────────────────────────────────
+# nav.run() kör render()-funktionen för den sida menyn står på.
 
-PAGES[page]()
+nav.run()

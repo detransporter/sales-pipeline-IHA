@@ -124,8 +124,17 @@ def clear_data_cache() -> None:
 # ── Navigering ───────────────────────────────────────────────────────────────
 
 def goto(target: str) -> None:
-    """Callback för navigeringsknappar — byter sida i menyn."""
-    st.session_state["nav"] = target
+    """
+    Callback för navigeringsknappar ("Gå till Leads →" m.fl.) — begär ett
+    sidbyte till `target` (en av nycklarna i app.py:s PAGES).
+
+    Sätter BARA en flagga; själva bytet görs av app.py i skriptets huvudflöde.
+    Anledningen: st.switch_page() är en TYST no-op inuti en on_click-callback
+    (verifierat 2026-07-31 — den kastar inget fel, den gör bara ingenting och
+    knappen ser trasig ut). Callbacken kör före omkörningen av skriptet, så
+    app.py hinner läsa flaggan och byta sida på rätt ställe.
+    """
+    st.session_state["_goto"] = target
 
 
 # ── LinkedIn-länkar ──────────────────────────────────────────────────────────
