@@ -7,6 +7,7 @@ att det finns på EN plats. Ändrar du t.ex. statuslistan gör du det här.
 
 import logging
 import urllib.parse
+from datetime import date, timedelta
 
 import streamlit as st
 
@@ -137,6 +138,70 @@ def goto(target: str) -> None:
     st.session_state["_goto"] = target
 
 
+# ── Skjut upp-panelen (delad av två sidor) ───────────────────────────────────
+
+def render_postpone_panel(prospect: dict, next_action: str, key: str,
+                          on_done=None) -> None:
+    """
+    Panelen "📅 Skjut upp" — flyttar fram nästa kontaktdatum med en valfri
+    anteckning om varför.
+
+    Fanns tidigare i två nästan identiska kopior (uppföljningskortet i
+    replies.py och "Redigera kontakt" i overview.py, ~40 rader vardera). Den
+    som ändrade den ena glömde lätt den andra — samlad här 2026-08-03.
+
+    prospect  — kontakten (behöver 'id', 'extra_info', ev. 'bolag')
+    next_action — nästa uppföljningssteg ('followup_1'|'followup_2'|'close'),
+                styr när kontakten dyker upp igen
+    key       — unikt prefix för widget-nycklarna (sidorna kan rita panelen
+                samtidigt, då krockar annars nycklarna)
+    on_done   — valfri callback som körs efter lyckad uppskjutning, t.ex. för
+                att tömma cachen (overview.py behöver det, replies.py inte)
+    """
+    from agents.followup import postpone_followup
+
+    pid = prospect["id"]
+    tidigare = (prospect.get("extra_info") or "").strip()
+    if tidigare:
+        st.caption("📝 Tidigare anteckningar:")
+        st.caption(tidigare)
+    st.caption("Flytta fram nästa kontaktdatum. Kontakten försvinner ur kön "
+               "och dyker upp igen den dag du väljer.")
+    anteckning = st.text_input(
+        "Anteckning (valfritt) — varför skjuter du upp?",
+        key=f"{key}_note",
+        placeholder="T.ex. Sa nej till möte nu, men gärna senare i år.")
+
+    c1, c2, c3 = st.columns(3)
+    quick = None
+    if c1.button("+1 vecka", key=f"{key}_1w", width="stretch"):
+        quick = date.today() + timedelta(days=7)
+    if c2.button("+2 veckor", key=f"{key}_2w", width="stretch"):
+        quick = date.today() + timedelta(days=14)
+    # "+1 månad" i stället för det tidigare "Efter 15 aug": det datumet gav
+    # rätt resultat bara fram till mitten av augusti — resten av året betydde
+    # samma knapp plötsligt "imorgon", utan att det syntes.
+    if c3.button("+1 månad", key=f"{key}_1m", width="stretch"):
+        quick = date.today() + timedelta(days=30)
+
+    valt = st.date_input("…eller välj datum",
+                         value=date.today() + timedelta(days=14),
+                         min_value=date.today() + timedelta(days=1),
+                         key=f"{key}_date")
+    do_it = st.button("📅 Skjut upp till valt datum", key=f"{key}_go")
+    target = quick or (valt if do_it else None)
+    if not target:
+        return
+    with action("Kunde inte skjuta upp"):
+        postpone_followup(pid, next_action, target, anteckning=anteckning,
+                          existing_extra_info=prospect.get("extra_info") or "")
+        if on_done:
+            on_done()
+        st.success(f"✅ Uppskjuten — {prospect.get('bolag') or 'kontakten'} "
+                   f"dyker upp igen {target.isoformat()}.")
+        st.rerun()
+
+
 # ── LinkedIn-länkar ──────────────────────────────────────────────────────────
 
 def linkedin_url_for(namn: str, bolag: str = "", url: str = "") -> tuple[str, str]:
@@ -162,24 +227,6 @@ def person_link_inline(namn: str, bolag: str = "", url: str = "") -> str:
 
 
 # ── DM & mejl ────────────────────────────────────────────────────────────────
-
-def generate_best_dm(p: dict, best_variant: str = "variant_b") -> str:
-    """Generera ETT DM (bästa vinkeln) för en kontakt, med ev. hemsidekontext."""
-    from agents.dm_generator import generate_dm_variants
-
-    website_context = ""
-    if p.get("website"):
-        try:
-            from integrations import apify_research as _apify
-            website_context = _apify.fetch_website_text(p["website"])
-        except Exception:
-            website_context = ""
-    variants = generate_dm_variants(
-        p.get("namn", ""), p.get("titel", ""), p.get("bolag", ""), p.get("bransch", ""),
-        website_context=website_context,
-    )
-    return (variants.get(best_variant) or variants.get("variant_b")
-            or variants.get("variant_a") or "")
 
 
 def log_sent_email(prospect_id: str, to_addr: str, subject: str, body: str) -> None:

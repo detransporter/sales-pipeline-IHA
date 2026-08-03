@@ -17,9 +17,9 @@ Proof point som alltid inkluderas som "Perceived Likelihood":
 """
 
 import json
-import os
 
-import anthropic
+
+from agents import llm
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -89,21 +89,6 @@ def _dos(varulager_msek, omsattning_msek) -> int | None:
         v, o = float(varulager_msek), float(omsattning_msek)
         if v > 0 and o > 0:
             return round(v * 365 / o)
-    except Exception:
-        pass
-    return None
-
-
-def _freeable_range(varulager_msek) -> tuple[float, float] | None:
-    """
-    Grovt drömresultat i MSEK: erfarenhetsmässigt sitter 15–30 % av lagervärdet
-    i döda/långsamma artiklar i lager-tunga bolag med låg omsättningshastighet.
-    Presenteras ALLTID som estimat i mejlet, aldrig som fastställd siffra.
-    """
-    try:
-        v = float(varulager_msek)
-        if v > 0:
-            return round(v * 0.15, 1), round(v * 0.30, 1)
     except Exception:
         pass
     return None
@@ -512,7 +497,7 @@ def generate_email(
 
     # ── Anropa Claude ──────────────────────────────────────────────────────────
     # max_retries=5: fler automatiska omförsök vid 529 Overloaded / tillfälliga fel
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"), max_retries=5)
+    client = llm.client(max_retries=5)
 
     def _call_and_parse() -> dict:
         response = client.messages.create(
@@ -623,7 +608,7 @@ def generate_call_script(bolag, namn="", titel="", bransch="", orgnr="", website
                 + "\n".join(f"  {f}" for f in fakta) + krok + prof
                 + f"\n\nTilltala personen '{fornamn}'. Returnera bara manuset (ren text).")
     try:
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"), max_retries=5)
+        client = llm.client(max_retries=5)
         resp = client.messages.create(
             model=MODEL, max_tokens=3000, system=_CALL_SYSTEM,
             messages=[{"role": "user", "content": user_msg}])

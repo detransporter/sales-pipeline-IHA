@@ -1,6 +1,6 @@
-import os
 import json
-import anthropic
+
+from agents import llm
 from dotenv import load_dotenv
 
 from agents.model_config import MODEL_STANDARD as MODEL
@@ -59,7 +59,7 @@ def generate_dm_variants(namn: str, titel: str, bolag: str, bransch: str,
     enkla frågan kan kännas specifik och personlig — ALDRIG för att pitcha eller
     nämna problem.
     """
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    client = llm.client()
     fornamn = _get_first_name(namn)
 
     guidance_block = ""

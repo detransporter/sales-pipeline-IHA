@@ -29,18 +29,22 @@ Resten av appen importerar fortfarande exakt som förut —
 (`__init__.py`) samlar bara ihop allt från undermodulerna nedan så att
 INGENTING någon annanstans i koden behövde ändras.
 
-  _maps.py         — prata med Apifys API: Google Maps-bolagssök, Google-sök,
-                      LinkedIn-profilsök, och den delade "kör en actor"-motorn.
-  _scrape.py        — läs text från en hemsida: startsida, team-/kontaktsidor,
-                      sitemap.xml, schema.org-strukturdata. Ingen Apify alls,
-                      bara vanlig HTTP.
-  _contact.py       — hitta e-post + telefon på en hemsida, och gissa/verifiera
-                      en hemsidas domän gratis (ingen Apify).
-  _person_email.py  — gissa och SMTP-verifiera en NAMNGIVEN persons e-post.
+  _maps.py    — prata med Apifys API: Google Maps-bolagssök, Google-sök, och
+                 den delade "kör en actor"-motorn.
+  _scrape.py  — läs text från en hemsida: startsida, team-/kontaktsidor,
+                 sitemap.xml, schema.org-strukturdata. Ingen Apify alls,
+                 bara vanlig HTTP.
+  _contact.py — hitta e-post + telefon på en hemsida, gissa/verifiera en
+                 hemsidas domän gratis (ingen Apify), och gissa troliga
+                 adresser för en namngiven person (_generate_email_variants).
 
-Vill du ändra något specifikt: hemsidetext → _scrape.py, e-post/telefon på en
-sajt → _contact.py, en persons mejladress → _person_email.py, prata med Apify
-(Google Maps/Google-sök) → _maps.py.
+Vill du ändra något specifikt: hemsidetext → _scrape.py, e-post/telefon eller
+en persons mejladress → _contact.py, prata med Apify (Google Maps/Google-sök)
+→ _maps.py.
+
+En fjärde modul, _person_email.py, togs bort 2026-08-03: dess enda publika
+funktion (construct_person_email med SMTP-verifiering) anropades aldrig från
+någonstans i appen. Det enda som faktiskt användes flyttades till _contact.py.
 """
 
 from ._contact import (
@@ -67,6 +71,7 @@ from ._contact import (
     _decode_cfemail,
     _extract_emails_from_html,
     _extract_phones,
+    _generate_email_variants,
     _page_matches_company,
     _probe,
     _rank_emails,
@@ -86,19 +91,10 @@ from ._maps import (
     _run_actor,
     clear_last_error,
     find_companies,
-    find_linkedin_profiles,
     get_last_error,
     google_search,
     is_configured,
     remaining_usage_usd,
-)
-from ._person_email import (
-    _GENERIC_LOCALS,
-    _generate_email_variants,
-    _infer_pattern,
-    _mx_host,
-    _smtp_verify,
-    construct_person_email,
 )
 from ._scrape import (
     BeautifulSoup,
@@ -121,7 +117,6 @@ from ._scrape import (
 
 __all__ = [
     "is_configured", "remaining_usage_usd", "find_companies", "google_search",
-    "find_linkedin_profiles", "fetch_website_text", "fetch_people_pages",
+    "fetch_website_text", "fetch_people_pages",
     "find_emails", "guess_company_website", "find_company_website",
-    "construct_person_email",
 ]

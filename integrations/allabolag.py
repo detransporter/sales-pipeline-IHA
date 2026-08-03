@@ -226,37 +226,6 @@ def segmentering(revenue_from_tkr: int, revenue_to_tkr: int, location: str = "",
     return out[:max_results]
 
 
-def segmentering_sweep(lan_list: list[str], revenue_from_tkr: int, revenue_to_tkr: int,
-                       per_lan: int = 150, profit_from_tkr: int | None = None,
-                       profit_to_tkr: int | None = None):
-    """
-    Generator: kör Segmentering (omsättning + plats, server-filtrerad SNI-data) ETT län i
-    taget och yield:a (län, bolagslista). Varje län har sin egen pool, så att svepa alla 21
-    län ger MÅNGDUBBELT fler bolag i rätt bransch än en enda nationell hämtning (där 150
-    träffar delas av alla branscher). Anroparen poolar/dedupar och SNI-filtrerar.
-
-    Låter UI visa progress per län. Allt gratis.
-    """
-    for lan in lan_list:
-        yield lan, segmentering(revenue_from_tkr, revenue_to_tkr, location=lan,
-                                profit_from_tkr=profit_from_tkr, profit_to_tkr=profit_to_tkr,
-                                max_results=per_lan)
-
-
-def search_lan_sweep(keywords: list[str], lan_list: list[str]):
-    """
-    Generator: svep en bransch över flera län och yield:a (län, bolagslista) i taget.
-    Låter UI visa progress. Poolar inte mellan län — anroparen slår ihop.
-
-    Obs: sökord-varianter utökar inte poolen inom ETT län (Allabolag ger samma ~25),
-    det är geografin som breddar. Därför används bara första sökordet per län — det
-    håller antalet hämtningar nere (ett per län) utan att tappa träffar.
-    """
-    primary = keywords[0] if keywords else ""
-    for lan in lan_list:
-        yield lan, search_companies(primary, lan, max_results=25)
-
-
 def parse_company(html: str) -> dict:
     """Parsa en hämtad Allabolag-sida till strukturerad ekonomi. {} om data saknas."""
     data = _extract_next_data(html)

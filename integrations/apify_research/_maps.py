@@ -208,17 +208,3 @@ def google_search(query: str, max_results: int = 10,
     return out
 
 
-def find_linkedin_profiles(bolag: str, roles: list[str],
-                           max_results: int = 10) -> list[dict]:
-    """
-    Hitta publika LinkedIn-profil-URL:er för rätt roll på ett bolag, via Google.
-    roles = lista med roller/sökord, t.ex. ['inköpschef', 'logistikchef', 'supply chain'].
-    Returnerar bara träffar på linkedin.com/in/.
-    """
-    bolag = (bolag or "").strip()
-    if not bolag:
-        return []
-    role_part = " OR ".join(f'"{r}"' for r in roles if r) or ""
-    query = f'"{bolag}" {role_part} site:linkedin.com/in'.strip()
-    results = google_search(query, max_results=max_results)
-    return [r for r in results if "linkedin.com/in/" in r["url"].lower()]

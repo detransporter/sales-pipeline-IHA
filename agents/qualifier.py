@@ -1,6 +1,6 @@
-import os
 import json
-import anthropic
+
+from agents import llm
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -41,7 +41,7 @@ def qualify_reply(svar_text: str) -> dict:
     som övriga AI-anropande agenter i appen har, t.ex. lead_finder._parse_json).
     """
     try:
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+        client = llm.client()
 
         response = client.messages.create(
             model=MODEL,

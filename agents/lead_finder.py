@@ -14,9 +14,8 @@ I båda fallen lämnas personens namn tomt — David hittar rätt person på Lin
 Förslagen sparas som 'pending' i lead_suggestions; David godkänner innan kontakt.
 """
 
-import os
-import json
-import anthropic
+
+from agents import llm
 from dotenv import load_dotenv
 
 from agents.prospecting import score_prospect
@@ -76,19 +75,6 @@ För varje vald bolag, returnera ett objekt:
 Returnera ENDAST ett JSON-objekt med nyckeln "leads" som är en lista. Inga förklaringar utanför JSON."""
 
 
-def _parse_json(raw: str) -> dict:
-    raw = raw.strip()
-    if "```" in raw:
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
-    try:
-        return json.loads(raw)
-    except Exception:
-        return {}
-
-
 def _build_queries(focus: str) -> list[str]:
     """Bygg Google Maps-sökningar. Eget fokus vinner, annars standard ICP-sökningar."""
     focus = (focus or "").strip()
@@ -121,7 +107,7 @@ def _suggest_via_apify(n: int, existing: set[str], focus: str) -> list[dict]:
     )
     by_name = {c["bolag"].lower(): c for c in fresh}
 
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    client = llm.client()
     user_message = (
         f"Här är verkliga bolag från Google Maps. Välj de {n} bästa IHA-kandidaterna "
         f"och annotera dem. Välj ENDAST bland dessa, hitta inte på egna:\n\n{listing}\n\n"
@@ -133,7 +119,7 @@ def _suggest_via_apify(n: int, existing: set[str], focus: str) -> list[dict]:
         system=SELECT_SYSTEM,
         messages=[{"role": "user", "content": user_message}],
     )
-    data = _parse_json(response.content[0].text)
+    data = llm.parse_json(response.content[0].text)
     raw_leads = data.get("leads", []) if isinstance(data, dict) else []
 
     records = []
@@ -190,7 +176,7 @@ Inga förklaringar utanför JSON."""
 
 
 def _suggest_via_guess(n: int, existing: set[str], focus: str) -> list[dict]:
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    client = llm.client()
 
     skip_text = ""
     if existing:
@@ -209,7 +195,7 @@ def _suggest_via_guess(n: int, existing: set[str], focus: str) -> list[dict]:
         system=GUESS_SYSTEM,
         messages=[{"role": "user", "content": user_message}],
     )
-    data = _parse_json(response.content[0].text)
+    data = llm.parse_json(response.content[0].text)
     raw_leads = data.get("leads", []) if isinstance(data, dict) else []
 
     records = []

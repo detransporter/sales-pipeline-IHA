@@ -1,5 +1,4 @@
 import pandas as pd
-from io import BytesIO
 
 # Kolumnmappning — accepterar varianter
 COLUMN_MAP = {

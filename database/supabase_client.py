@@ -1,6 +1,18 @@
 import os
+from datetime import datetime
+
 from supabase import create_client, Client, ClientOptions
 from dotenv import load_dotenv
+
+# OBS: `datetime` MÅSTE importeras här på modulnivå. update_pipeline_deal() och
+# save_daily_reflection() använder datetime.utcnow() men saknade importen —
+# de kraschade med NameError varje gång de kördes (dvs. varje gång ett deal
+# flyttades/redigerades i 💰 Pipeline, och när en kvällsreflektion sparades).
+# Felen doldes av anropssidans try/except: pipelinen visade "Kunde inte
+# flytta: name 'datetime' is not defined" och reflektionen bara
+# "⚠️ Supabase misslyckades". Hittat och fixat 2026-08-03.
+# Flera funktioner nedan har dessutom en egen `from datetime import datetime`
+# inuti kroppen — de är nu överflödiga men skadar inget.
 
 load_dotenv()
 
@@ -181,17 +193,6 @@ def mark_dm_skickad(dm_id: str, at: str | None = None) -> dict:
     return result.data[0] if result.data else {}
 
 
-def update_dm_svar(dm_id: str, status: str, svar_text: str = "") -> dict:
-    from datetime import datetime
-    client = get_client()
-    result = client.table("dm_history").update({
-        "status": status,
-        "svar_at": datetime.utcnow().isoformat(),
-        "svar_text": svar_text,
-    }).eq("id", dm_id).execute()
-    return result.data[0] if result.data else {}
-
-
 def get_dm_history(prospect_id: str) -> list[dict]:
     client = get_client()
     result = client.table("dm_history").select("*").eq("prospect_id", prospect_id).order("created_at").execute()
@@ -295,22 +296,6 @@ def get_pipeline_stats() -> dict:
 
 # ── Orchestrator: körningar & logg ──────────────────────────────────────────
 
-def start_run(run_type: str = "daily") -> dict:
-    """Skapa en ny orchestrator-körning och returnera den."""
-    client = get_client()
-    result = client.table("agent_runs").insert({"run_type": run_type}).execute()
-    return result.data[0] if result.data else {}
-
-
-def finish_run(run_id: str, summary: dict) -> dict:
-    from datetime import datetime
-    client = get_client()
-    result = client.table("agent_runs").update({
-        "finished_at": datetime.utcnow().isoformat(),
-        "summary": summary,
-    }).eq("id", run_id).execute()
-    return result.data[0] if result.data else {}
-
 
 def log_action(run_id: str | None, agent: str, action: str,
                prospect_id: str | None = None, detail: dict | None = None) -> dict:
@@ -324,30 +309,6 @@ def log_action(run_id: str | None, agent: str, action: str,
         "detail": detail,
     }).execute()
     return result.data[0] if result.data else {}
-
-
-def get_recent_runs(limit: int = 10) -> list[dict]:
-    client = get_client()
-    result = (
-        client.table("agent_runs")
-        .select("*")
-        .order("started_at", desc=True)
-        .limit(limit)
-        .execute()
-    )
-    return result.data
-
-
-def get_run_log(run_id: str) -> list[dict]:
-    client = get_client()
-    result = (
-        client.table("agent_log")
-        .select("*")
-        .eq("run_id", run_id)
-        .order("created_at")
-        .execute()
-    )
-    return result.data
 
 
 # ── Lead-förslag (lead_finder → David godkänner) ────────────────────────────
@@ -411,23 +372,6 @@ def get_sent_emails(limit: int = 100) -> list[dict]:
         .execute()
     )
     return result.data
-
-
-def has_sent_email(prospect_id: str) -> bool:
-    """True om kontakten redan fått ett mejl (för att undvika dubbletter)."""
-    if not prospect_id:
-        return False
-    client = get_client()
-    result = (
-        client.table("dm_history")
-        .select("id")
-        .eq("prospect_id", prospect_id)
-        .eq("typ", "email")
-        .eq("status", "skickad")
-        .limit(1)
-        .execute()
-    )
-    return bool(result.data)
 
 
 def update_lead_suggestion_person(suggestion_id: str, namn: str,
@@ -587,39 +531,6 @@ def get_daily_activity(days: int = 14) -> list[dict]:
 
 
 # ── Eget minne (agent_memory) ───────────────────────────────────────────────
-
-def insert_memory(content: str, tags: str | None = None) -> dict:
-    client = get_client()
-    result = client.table("agent_memory").insert({
-        "content": content,
-        "tags": tags,
-    }).execute()
-    return result.data[0] if result.data else {}
-
-
-def list_memory(limit: int = 15) -> list[dict]:
-    client = get_client()
-    result = (
-        client.table("agent_memory")
-        .select("*")
-        .order("created_at", desc=True)
-        .limit(limit)
-        .execute()
-    )
-    return result.data
-
-
-def search_memory(query: str, limit: int = 15) -> list[dict]:
-    client = get_client()
-    result = (
-        client.table("agent_memory")
-        .select("*")
-        .ilike("content", f"%{query}%")
-        .order("created_at", desc=True)
-        .limit(limit)
-        .execute()
-    )
-    return result.data
 
 
 # ── Inkorg / inkommande svar ────────────────────────────────────────────────

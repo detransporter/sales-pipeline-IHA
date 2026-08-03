@@ -14,8 +14,8 @@ Returnerar en dict (se analyze_company) som app.py renderar i Leads-vyn.
 """
 
 import os
-import json
-import anthropic
+
+from agents import llm
 from dotenv import load_dotenv
 
 from integrations import apify_research as apify
@@ -45,7 +45,7 @@ def classify_business_model(bolag: str, bransch: str = "", website_text: str = "
         "Svara med BARA ordet, inget annat."
     )
     try:
-        client = anthropic.Anthropic(api_key=api_key)
+        client = llm.client()
         resp = client.messages.create(
             model=CLASSIFY_MODEL, max_tokens=12,
             messages=[{"role": "user", "content": prompt}])
@@ -81,30 +81,6 @@ Returnera ENDAST ett JSON-objekt:
   "riskflaggor": ["1–3 osäkerheter/invändningar (t.ex. säsong, K2-förenklad rapportering), eller [] om inga"]
 }
 Ingen text utanför JSON."""
-
-
-def _parse_json(raw: str) -> dict:
-    """Tolerant JSON-extraktion — tål att modellen lindar JSON i prosa/tankeblock."""
-    raw = (raw or "").strip()
-    if "```" in raw:
-        parts = raw.split("```")
-        if len(parts) >= 2:
-            raw = parts[1]
-            if raw.lower().startswith("json"):
-                raw = raw[4:]
-            raw = raw.strip()
-    try:
-        return json.loads(raw)
-    except Exception:
-        pass
-    # Fallback: plocka ut från första { till sista } (prosa runtom stör inte).
-    try:
-        i, j = raw.find("{"), raw.rfind("}")
-        if i != -1 and j > i:
-            return json.loads(raw[i:j + 1])
-    except Exception:
-        pass
-    return {}
 
 
 def compute_potential(varulager_msek) -> dict:
@@ -245,13 +221,13 @@ def analyze_company(bolag: str, bransch: str = "", website: str = "",
     )
 
     try:
-        client = anthropic.Anthropic(api_key=api_key)
+        client = llm.client()
         response = client.messages.create(
             model=MODEL, max_tokens=1800, system=SYSTEM,
             messages=[{"role": "user", "content": user_message}],
         )
         raw = "".join(b.text for b in response.content if b.type == "text")
-        data = _parse_json(raw)
+        data = llm.parse_json(raw)
     except Exception as e:
         return _base({"sammanfattning": f"Kunde inte göra AI-analys: {e}"})
 

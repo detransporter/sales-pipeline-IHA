@@ -9,13 +9,12 @@ Agenten SKRIVER bara till Open Brain (chattloggar, reflektioner) — aldrig till
 pipelinen. Supabase är den strukturerade sanningen, minnet ligger ovanpå.
 """
 
-import os
 import re
-from datetime import date, datetime
+from datetime import date
 
-import anthropic
 import streamlit as st
 
+from agents import llm
 from brain import open_brain
 from database import supabase_client as db
 from views import shared
@@ -53,8 +52,9 @@ OPEN BRAIN:
 Du får ibland ett avsnitt märkt "RELEVANT FRÅN OPEN BRAIN" i din kontext. Det är Davids sparade tankar, kontaktnoter och pipeline-historik. Använd alltid den informationen när den finns – det är ditt minne. Säg aldrig att du saknar tillgång till Open Brain om det avsnittet finns i din kontext."""
 
 
-def _client() -> anthropic.Anthropic:
-    return anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+def _client():
+    """Delad klient — se agents/llm.py."""
+    return llm.client()
 
 
 def _funnel_context() -> str:

@@ -40,10 +40,6 @@ def is_configured() -> bool:
     return bool(c["user"] and c["password"])
 
 
-def from_address() -> str:
-    return _conf()["user"]
-
-
 def _encode_header(value: str) -> str:
     """Encoda ett header-värde med RFC 2047 om det innehåller non-ASCII."""
     try:

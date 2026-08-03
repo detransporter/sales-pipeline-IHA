@@ -3,15 +3,13 @@
 import pandas as pd
 import streamlit as st
 
-from datetime import date, timedelta
-
 from agents import learning
-from agents.followup import postpone_followup
 from agents.qualifier import qualify_reply
 from database import supabase_client as db
 from views.shared import (PIPELINE_STATUSES, KONTAKT_KATEGORIER,
                           cached_prospects, cached_pipeline_stats, cached_sent_emails,
-                          clear_data_cache, unique_prospect_labels)
+                          clear_data_cache, unique_prospect_labels,
+                          render_postpone_panel)
 
 # Vilket uppföljningssteg en kontakt är på väg mot, givet nuvarande status.
 # Styr tröskeln när kontakten dyker upp igen efter en uppskjutning.
@@ -172,45 +170,11 @@ def render():
                         "på uppföljning (status *skickad*, *followup_1* eller *followup_2*). "
                         f"Den här kontakten har status **{cur}**.")
             else:
-                _tidigare_anteckningar = (chosen.get("extra_info") or "").strip()
-                if _tidigare_anteckningar:
-                    st.caption("📝 Tidigare anteckningar:")
-                    st.caption(_tidigare_anteckningar)
-                st.caption("Mottagaren på semester, eller ett annat skäl? Flytta fram "
-                           "nästa kontakt så att bolaget försvinner ur uppföljningsflödet "
-                           "och dyker upp igen den dag du väljer.")
-                anteckning = st.text_input(
-                    "Anteckning (valfritt) — varför skjuter du upp?",
-                    key="ov_pp_note",
-                    placeholder="T.ex. Sa nej till möte nu, men gärna senare i år.")
-                sc1, sc2, sc3 = st.columns(3)
-                quick = None
-                if sc1.button("+1 vecka", key="ov_pp1", width="stretch"):
-                    quick = date.today() + timedelta(days=7)
-                if sc2.button("+2 veckor", key="ov_pp2", width="stretch"):
-                    quick = date.today() + timedelta(days=14)
-                # Se kommentaren i views/replies.py — "Efter 15 aug" gav fel
-                # datum större delen av året.
-                if sc3.button("+1 månad", key="ov_pp3", width="stretch"):
-                    quick = date.today() + timedelta(days=30)
-                valt = st.date_input("…eller välj datum",
-                                     value=date.today() + timedelta(days=14),
-                                     min_value=date.today() + timedelta(days=1),
-                                     key="ov_pp_date")
-                do_it = st.button("📅 Skjut upp till valt datum", key="ov_pp_go",
-                                  type="primary")
-                target = quick or (valt if do_it else None)
-                if target:
-                    try:
-                        postpone_followup(chosen["id"], action, target,
-                                          anteckning=anteckning,
-                                          existing_extra_info=chosen.get("extra_info") or "")
-                        clear_data_cache()
-                        st.success(f"✅ Uppskjuten — {chosen.get('bolag','kontakten')} "
-                                   f"dyker upp igen {target.isoformat()}.")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Fel: {e}")
+                # Panelen bor i views/shared.py — samma kod som
+                # uppföljningskortet i 💬 Svar & uppföljning använder.
+                # on_done tömmer cachen så listan ovan blir färsk direkt.
+                render_postpone_panel(chosen, action, key="ov_pp",
+                                      on_done=clear_data_cache)
 
         with tab_delete:
             st.warning(f"Du håller på att ta bort **{chosen.get('namn')} — "

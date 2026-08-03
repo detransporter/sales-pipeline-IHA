@@ -12,7 +12,6 @@ Kommandon:
   /idag                     — Dagens uppföljningslista
   /pipeline                 — Pipeline-sammanfattning
   /dm [namn]                — Generera DM direkt i Telegram
-  /chef                     — Kör Sales Chief: förbered dagens jobb
   /inkorg                   — Kolla LinkedIn-svar & förbered förslag
 """
 
@@ -23,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import asyncio
 import functools
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
@@ -32,8 +31,6 @@ from dotenv import load_dotenv
 from database import supabase_client as db
 from agents.dm_generator import generate_dm_variants
 from agents.followup import get_daily_summary
-from agents.qualifier import qualify_reply, CATEGORY_TO_STATUS
-from agents.orchestrator import run_day
 from agents.inbox_watcher import check_inbox, build_telegram_text as inbox_telegram_text
 
 load_dotenv()
@@ -61,7 +58,7 @@ def _require_authorized(handler):
 
     CHAT_ID lästes tidigare bara för UTGÅENDE påminnelser — ingen handler
     kontrollerade vem som SKICKADE ett kommando. Läckt bot-token räckte då
-    för att trigga en full säljkörning (/chef) eller ändra pipeline-status.
+    för att ändra pipeline-status eller dra AI-anrop (/dm).
     Saknas CHAT_ID (ej konfigurerat) nekas allt — säkrast att stänga igen
     än att av misstag stå öppen.
     """
@@ -217,20 +214,6 @@ async def cmd_dm(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 @_require_authorized
-async def cmd_chef(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/chef — Kör Sales Chief (orchestratorn) nu och förbered dagens jobb."""
-    await _reply(update, "🧠 Sales Chief jobbar... (förbereder DM, uppföljningar & leads)")
-    loop = asyncio.get_event_loop()
-    try:
-        # run_day gör flera API-anrop — kör i tråd så vi inte blockerar boten
-        result = await loop.run_in_executor(None, lambda: run_day(run_type="manual"))
-    except Exception as e:
-        await _reply(update, f"Fel i orchestratorn: {e}")
-        return
-    await _reply(update, result["telegram"])
-
-
-@_require_authorized
 async def cmd_inkorg(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/inkorg — Kolla LinkedIn-svar nu och förbered förslag."""
     await _reply(update, "💬 Kollar inkorgen...")
@@ -283,7 +266,6 @@ def main():
     app.add_handler(CommandHandler("idag", cmd_idag))
     app.add_handler(CommandHandler("pipeline", cmd_pipeline))
     app.add_handler(CommandHandler("dm", cmd_dm))
-    app.add_handler(CommandHandler("chef", cmd_chef))
     app.add_handler(CommandHandler("inkorg", cmd_inkorg))
 
     logger.info("Telegram bot startad. Lyssnar på kommandon...")

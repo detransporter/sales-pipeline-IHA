@@ -205,6 +205,37 @@ def _ascii_name(s: str) -> str:
     return unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode()
 
 
+def _generate_email_variants(namn: str, domain: str) -> list[str]:
+    """
+    Generera troliga e-postadresser för en person på given domän.
+    Täcker de vanligaste svenska namnmönstren.
+
+    Ligger här (flyttad från _person_email.py 2026-08-03, som togs bort):
+    modulen innehöll construct_person_email() med SMTP-verifiering, men den
+    anropades aldrig från någonstans i appen. Den här funktionen var det enda
+    som faktiskt användes (av agents/people_finder.py) och hör ändå ihop med
+    _ascii_name här intill.
+    """
+    parts = _ascii_name(namn).split()
+    if len(parts) < 2 or not domain:
+        return []
+    f = parts[0].split("-")[0]   # Per-Erik → per
+    e = parts[-1]
+    fi = f[0] if f else ""
+
+    raw = [
+        f"{f}.{e}@{domain}",        # karin.lindqvist  (vanligast i Sverige)
+        f"{fi}.{e}@{domain}",       # k.lindqvist
+        f"{f}@{domain}",            # karin
+        f"{fi}{e}@{domain}",        # klindqvist
+        f"{f}{e}@{domain}",         # karinlindqvist
+        f"{f}-{e}@{domain}",        # karin-lindqvist
+        f"{e}.{f}@{domain}",        # lindqvist.karin
+        f"{e}{fi}@{domain}",        # lindqvistk
+    ]
+    return list(dict.fromkeys(c for c in raw if len(c) > 5))
+
+
 def _company_domain_stems(bolag: str) -> list[str]:
     """Troliga domän-stammar från ett bolagsnamn, mest sannolik först."""
     words = [w for w in re.split(r"[^a-z0-9]+", _ascii_name(bolag)) if w]

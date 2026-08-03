@@ -6,10 +6,11 @@ import streamlit as st
 
 from agents import inbox_watcher
 from agents.dm_generator import generate_followup
-from agents.followup import get_followups_due, process_close, postpone_followup
+from agents.followup import get_followups_due, process_close
 from database import supabase_client as db
 from views.shared import (person_link_inline, render_email_composer, log_sent_email,
-                          kategori_label, unique_prospect_labels)
+                          kategori_label, unique_prospect_labels,
+                          render_postpone_panel)
 
 
 def _reply_subject(prospect_id: str, bolag: str) -> str:
@@ -439,42 +440,10 @@ def _render_followup_card(item):
                     st.rerun()
 
         # ── Skjut upp: mottagaren ledig, eller ett annat skäl? ───────────────
+        # Själva panelen bor i views/shared.py — samma kod används av
+        # "Redigera kontakt" i 📊 Översikt.
         with st.expander("📅 Skjut upp (t.ex. semester, eller nej-tack-just-nu)"):
-            _tidigare_anteckningar = (p.get("extra_info") or "").strip()
-            if _tidigare_anteckningar:
-                st.caption("📝 Tidigare anteckningar:")
-                st.caption(_tidigare_anteckningar)
-            st.caption("Flytta fram nästa kontaktdatum. Kontakten försvinner ur kön "
-                       "och dyker upp igen den dag du väljer.")
-            anteckning = st.text_input(
-                "Anteckning (valfritt) — varför skjuter du upp?",
-                key=f"pp_note_{pid}",
-                placeholder="T.ex. Sa nej till möte nu, men gärna senare i år.")
-            pc1, pc2, pc3 = st.columns(3)
-            quick = None
-            if pc1.button("+1 vecka", key=f"pp1_{pid}", width="stretch"):
-                quick = date.today() + timedelta(days=7)
-            if pc2.button("+2 veckor", key=f"pp2_{pid}", width="stretch"):
-                quick = date.today() + timedelta(days=14)
-            # "+1 månad" i stället för det tidigare "Efter 15 aug": det datumet
-            # gav rätt resultat bara fram till mitten av augusti — resten av året
-            # betydde samma knapp plötsligt "imorgon", utan att det syntes.
-            if pc3.button("+1 månad", key=f"pp3_{pid}", width="stretch"):
-                quick = date.today() + timedelta(days=30)
-            valt = st.date_input("…eller välj datum", value=date.today() + timedelta(days=14),
-                                 min_value=date.today() + timedelta(days=1),
-                                 key=f"pp_date_{pid}")
-            do_it = st.button("📅 Skjut upp till valt datum", key=f"pp_go_{pid}")
-            target = quick or (valt if do_it else None)
-            if target:
-                try:
-                    postpone_followup(pid, item["action"], target,
-                                      anteckning=anteckning,
-                                      existing_extra_info=p.get("extra_info") or "")
-                    st.success(f"✅ Uppskjuten — dyker upp igen {target.isoformat()}.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Fel: {e}")
+            render_postpone_panel(p, item["action"], key=f"pp_{pid}")
 
         tab_mail, tab_call, tab_other = st.tabs(
             ["📧 Mejla uppföljning", "📞 Ring", "✔️ Markera manuellt"])

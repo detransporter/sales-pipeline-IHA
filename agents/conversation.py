@@ -21,9 +21,8 @@ och visar hur mycket kapital som ligger i döda/överstora artiklar. Det är int
 — det är ett gratis värde som naturligt leder till ett samtal.
 """
 
-import os
-import json
-import anthropic
+
+from agents import llm
 from dotenv import load_dotenv
 
 from database import supabase_client as db
@@ -79,19 +78,6 @@ Returnera ENDAST ett JSON-objekt:
 Ingen text utanför JSON."""
 
 
-def _parse_json(raw: str) -> dict:
-    raw = (raw or "").strip()
-    if "```" in raw:
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
-    try:
-        return json.loads(raw)
-    except Exception:
-        return {}
-
-
 def build_history(prospect_id: str) -> str:
     """
     Bygg en läsbar avskrift av hela samtalet ur databasen (skickade DM + inkomna svar),
@@ -129,7 +115,7 @@ def next_move(namn: str, titel: str, bolag: str, deras_svar: str,
     deras_svar = personens senaste meddelande. historik = avskrift av tidigare turer.
     nuvarande_steg = senast kända steg (hjälper motorn men den får omvärdera).
     """
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    client = llm.client()
     fornamn = namn.strip().split()[0] if namn.strip() else namn
 
     context = f"Kontakt: {namn} ({fornamn}), {titel} på {bolag}.\n"
@@ -149,7 +135,7 @@ def next_move(namn: str, titel: str, bolag: str, deras_svar: str,
         messages=[{"role": "user", "content": context}],
     )
 
-    data = _parse_json(response.content[0].text)
+    data = llm.parse_json(response.content[0].text)
     msg = str(data.get("meddelande", "")).strip()
     nu = str(data.get("nuvarande_steg", "")).strip().lower()
     nasta = str(data.get("nasta_steg", "")).strip().lower()

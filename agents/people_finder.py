@@ -26,12 +26,11 @@ Open Brain-inlärning (tåligt — fel loggar aldrig sönder sökningen):
 Open Brain nås via brain/open_brain.py (JSON-RPC över HTTP) — INTE via MCP.
 """
 
-import os
 import re
-import json
 import urllib.parse
 import requests
-import anthropic
+
+from agents import llm
 from dotenv import load_dotenv
 
 # Avkodare för Cloudflares mejlskydd (samma XOR-avkodning som e-postskraparen
@@ -129,25 +128,6 @@ Ingen text utanför JSON."""
 
 
 # ── Småhjälpare ────────────────────────────────────────────────────────────────
-
-def _parse_json(raw: str) -> dict:
-    raw = (raw or "").strip()
-    if "```" in raw:
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
-    try:
-        return json.loads(raw)
-    except Exception:
-        # Sista utväg: plocka ut första {...}-blocket ur ev. omgivande text.
-        start, end = raw.find("{"), raw.rfind("}")
-        if 0 <= start < end:
-            try:
-                return json.loads(raw[start:end + 1])
-            except Exception:
-                pass
-        return {}
 
 
 def _log(msg: str) -> None:
@@ -370,7 +350,7 @@ def _search_contact_page(bolag: str) -> str:
         # tillfälligt överbelastat (529) kan ett enda bolag annars hänga i flera
         # minuter och blockera hela bulk-kön bakom sig. Ett bolag som inte svarar
         # inom 30s ska ge upp och gå vidare, inte frysa resten av batchen.
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"), timeout=30.0)
+        client = llm.client(timeout=30.0)
         # max_uses=1 (var 3): varje extra sökning inom samma anrop skickar med
         # HELA den växande kontexten (tidigare sökresultat) igen — 3 sökningar
         # kunde kosta 10x en enda på svårhittade bolag (24/7-2026: 388 137
@@ -390,7 +370,7 @@ def _search_contact_page(bolag: str) -> str:
                                           tools=tools, messages=messages)
             conts += 1
         text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
-        url = str(_parse_json(text).get("url", "")).strip()
+        url = str(llm.parse_json(text).get("url", "")).strip()
         return url if url.startswith("http") else ""
     except Exception as e:
         _log(f"[people_finder] web search efter kontaktsida misslyckades för {bolag}: {e}")
@@ -416,7 +396,7 @@ def _read_pages(bolag: str, bransch: str, target_role: str,
     try:
         # Samma resonemang som i _search_contact_page — bunta tiden, blockera
         # aldrig hela batchen på ett enda bolag.
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"), timeout=30.0)
+        client = llm.client(timeout=30.0)
         response = client.messages.create(
             model=READ_MODEL,
             max_tokens=600,
@@ -424,7 +404,7 @@ def _read_pages(bolag: str, bransch: str, target_role: str,
             messages=[{"role": "user", "content": user_message}],
         )
         text = "".join(b.text for b in response.content if getattr(b, "type", "") == "text")
-        return _parse_json(text)
+        return llm.parse_json(text)
     except Exception as e:
         _log(f"[people_finder] Claude-läsning misslyckades för {bolag}: {e}")
         return {}
