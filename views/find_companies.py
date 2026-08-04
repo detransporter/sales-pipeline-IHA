@@ -8,6 +8,7 @@ import streamlit as st
 from integrations import allabolag
 from agents import financial_screener as screener
 from database import supabase_client as db
+from views import shared
 from views.shared import goto
 
 
@@ -446,15 +447,13 @@ def render():
                         "lagerandel": r.get("lagerandel"),
                         "vinstmarginal": r.get("vinstmarginal"),
                     })
-                try:
+                with shared.action("Kunde inte spara leads"):
                     existing = db.get_existing_companies()
                     fresh = [r for r in records if r["bolag"].lower() not in existing]
                     saved = db.insert_lead_suggestions(fresh)
                     st.success(f"Sparade {len(saved)} nya leads ({len(records) - len(fresh)} fanns redan). "
                                f"Gå till 🌱 Leads för att hitta personer & godkänna.")
                     st.button("🌱 Gå till Leads →", on_click=goto, args=("🌱 Leads",))
-                except Exception as e:
-                    st.error(f"Kunde inte spara: {e}")
 
         with st.expander("Se bortsorterade bolag (och varför)"):
             for r in res["rejected"]:

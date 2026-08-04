@@ -29,6 +29,7 @@ from agents import people_finder, company_analyzer, hiring_signals
 from integrations import apify_research as _apify
 from integrations import email_sender
 from database import supabase_client as db
+from views import shared
 from views.shared import (person_link_inline, render_company_analysis,
                           render_email_composer, log_sent_email, kategori_label,
                           clear_data_cache)
@@ -364,7 +365,7 @@ def _render_find_contact_button(l, lid) -> None:
                               width="stretch")):
         return
     with st.spinner("Läser bolagets hemsida efter rätt person..."):
-        try:
+        with shared.action("Kunde inte hämta kontaktuppgifter"):
             found = people_finder.find_person(
                 l.get("bolag", ""), l.get("website", ""),
                 l.get("titel", ""), l.get("bransch", ""))
@@ -406,8 +407,6 @@ def _render_find_contact_button(l, lid) -> None:
                            + (f" Läste: {_src}" if _src
                               else " Ingen sida gick att läsa — kan vara "
                                    "JS-sajt eller blockerad hämtning."))
-        except Exception as e:
-            st.error(f"Fel: {e}")
 
 
 def _render_find_email_button(l, lid, contact_cache) -> None:
@@ -416,7 +415,7 @@ def _render_find_email_button(l, lid, contact_cache) -> None:
                               width="stretch")):
         return
     with st.spinner("Letar e-post på hemsidan (renderar JS vid behov)..."):
-        try:
+        with shared.action("Kunde inte söka e-post"):
             # find_emails anropar bara Apify som sista utväg om den gratis
             # sökningen gav noll adresser — de flesta gånger nollställs det
             # här utan att något nytt fel någonsin sätts.
@@ -445,8 +444,6 @@ def _render_find_email_button(l, lid, contact_cache) -> None:
             if _apify_err:
                 st.warning(f"⚠️ Apify: {_apify_err}")
             st.rerun()
-        except Exception as e:
-            st.error(f"Fel: {e}")
 
 
 def _render_approve_button(l, lid) -> None:
@@ -454,13 +451,11 @@ def _render_approve_button(l, lid) -> None:
     if not (lid and st.button("✅ Godkänn", key=f"approve_{lid}",
                               type="primary", width="stretch")):
         return
-    try:
+    with shared.action("Kunde inte godkänna leadet"):
         db.promote_lead(l)
         clear_data_cache()
         st.success("Tillagd i pipeline!")
         st.rerun()
-    except Exception as e:
-        st.error(f"Fel: {e}")
 
 
 def _render_reject_button(lid) -> None:
@@ -470,12 +465,10 @@ def _render_reject_button(lid) -> None:
                               help="Passar inte (fel bransch/storlek e.d.) — "
                                    "tas bort ur listan.")):
         return
-    try:
+    with shared.action("Kunde inte avböja leadet"):
         db.update_lead_suggestion(lid, "rejected")
         st.success("Avböjd — borttagen ur leads.")
         st.rerun()
-    except Exception as e:
-        st.error(f"Fel: {e}")
 
 
 # ── Nedre panelerna: klistra in kontakt + "Mer"-expandern ───────────────────
@@ -510,7 +503,7 @@ def _render_paste_contact(l, lid, website: str) -> None:
         if not (p_email or p_tel or p_namn):
             st.warning("Hittade varken namn, e-post eller telefon i texten.")
             return
-        try:
+        with shared.action("Kunde inte spara inklistrad kontakt"):
             _old_n = (l.get("namn") or "").strip()
             if p_namn and _brain and _brain.is_configured():
                 try:
@@ -540,8 +533,6 @@ def _render_paste_contact(l, lid, website: str) -> None:
             st.success(f"Sparat — namn: {p_namn or '(oförändrat)'} · "
                        f"e-post: {p_email or '—'} · telefon: {p_tel or '—'}")
             st.rerun()
-        except Exception as e:
-            st.error(f"Fel: {e}")
 
 
 def _render_more_panel(l, lid, website: str, all_emails: list,
@@ -621,7 +612,7 @@ def _render_contact_tab(l, lid, website: str) -> None:
                                   placeholder="+46 70 123 45 67")
         if not st.form_submit_button("💾 Spara"):
             return
-        try:
+        with shared.action("Kunde inte spara kontaktuppgifterna"):
             # Lär agenten via Open Brain. TVÅ fall:
             #  1. Rättning: David skriver över en felgissning.
             #  2. Lärdom: agenten hittade INGEN, David hittade personen
@@ -660,8 +651,6 @@ def _render_contact_tab(l, lid, website: str) -> None:
                     website=website, telefon=_tel)
             st.success("Sparat!")
             st.rerun()
-        except Exception as e:
-            st.error(f"Fel: {e}")
 
 
 def _render_analysis_tab(l, lid, website: str, analysis_cache: dict) -> None:
@@ -670,7 +659,7 @@ def _render_analysis_tab(l, lid, website: str, analysis_cache: dict) -> None:
 
     def _run(model_override=""):
         with st.spinner("Analyserar bolagets lagerläge (siffror + hemsida)..."):
-            try:
+            with shared.action("Kunde inte analysera bolaget"):
                 analysis_cache[lid] = company_analyzer.analyze_company(
                     bolag=l.get("bolag", ""), bransch=l.get("bransch", ""),
                     website=website, omsattning_msek=l.get("omsattning"),
@@ -681,8 +670,6 @@ def _render_analysis_tab(l, lid, website: str, analysis_cache: dict) -> None:
                     vinstmarginal=l.get("vinstmarginal"),
                     orgnr=l.get("orgnr", ""), affarsmodell=model_override)
                 st.rerun()
-            except Exception as e:
-                st.error(f"Kunde inte analysera: {e}")
 
     if st.button("🔬 Gör analys" if not cached_a else "🔄 Gör om analys",
                  key=f"analyze_{lid}"):

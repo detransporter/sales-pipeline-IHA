@@ -8,6 +8,7 @@ from agents import inbox_watcher
 from agents.dm_generator import generate_followup
 from agents.followup import get_followups_due, process_close
 from database import supabase_client as db
+from views import shared
 from views.shared import (person_link_inline, render_email_composer, log_sent_email,
                           kategori_label, unique_prospect_labels,
                           render_postpone_panel)
@@ -93,7 +94,7 @@ def _render_replies_tab():
             st.markdown("### 📧 Email-svar")
             if st.button("🔄 Hämta olästa email-svar", key="fetch_email_replies"):
                 with st.spinner("Ansluter till Gmail..."):
-                    try:
+                    with shared.action("Kunde inte hämta email-svar"):
                         # Bygg addr → prospect_id från skickade mejl
                         sent = db.get_sent_emails(limit=200)
                         addr_to_pid: dict[str, str] = {}
@@ -124,8 +125,6 @@ def _render_replies_tab():
                             st.success(f"{len(fresh)} nya email-svar hittade.")
                         else:
                             st.info("Inga nya olästa email-svar från kända kontakter.")
-                    except Exception as e:
-                        st.error(f"Kunde inte hämta email-svar: {e}")
 
             pending_email = st.session_state.get("pending_email_replies") or []
             for i, r in enumerate(pending_email):
@@ -141,7 +140,7 @@ def _render_replies_tab():
                         if pid:
                             if st.button("🤖 Behandla", key=f"proc_email_{i}", type="primary"):
                                 with st.spinner("Kvalificerar..."):
-                                    try:
+                                    with shared.action("Kunde inte behandla svaret"):
                                         saved = inbox_watcher.process_manual_reply(pid, r["body"])
                                         pending_email.pop(i)
                                         st.session_state["pending_email_replies"] = pending_email
@@ -151,8 +150,6 @@ def _render_replies_tab():
                                         else:
                                             st.success("Behandlat — ligger nu i svarskön nedan.")
                                         st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Fel: {e}")
                         else:
                             st.caption("Okänd kontakt")
 
@@ -161,11 +158,9 @@ def _render_replies_tab():
     if _inbox.is_configured():
         if st.button("🔄 Kolla inkorgen automatiskt nu (Unipile)"):
             with st.spinner("Läser LinkedIn-svar..."):
-                try:
+                with shared.action("Kunde inte läsa LinkedIn-inkorgen"):
                     r = inbox_watcher.check_inbox()
                     st.success(f"{len(r['new_replies'])} nya svar, {r['unmatched']} omatchade.")
-                except Exception as e:
-                    st.error(f"Fel: {e}")
     else:
         st.caption("💡 Vill du ha det helt automatiskt senare? Koppla Unipile (se README).")
 
@@ -230,24 +225,20 @@ def _render_replies_tab():
                     if st.button("✅ Klar / hanterad", key=f"done_{r['id']}",
                                  type="primary" if not email else "secondary",
                                  width="stretch"):
-                        try:
+                        with shared.action("Kunde inte markera som hanterad"):
                             db.mark_reply_handled(r["id"])
                             st.success("Markerad som hanterad!")
                             st.rerun()
-                        except Exception as e:
-                            st.error(f"Fel: {e}")
                 with b2:
                     if st.button("❌ Avböj", key=f"reject_reply_{r['id']}",
                                  width="stretch",
                                  help="Kontakten är inte intresserad — stäng och arkivera."):
-                        try:
+                        with shared.action("Kunde inte avböja svaret"):
                             db.mark_reply_handled(r["id"])
                             if pid:
                                 db.update_prospect_status(pid, "avbojd")
                             st.success("Avböjd och stängd.")
                             st.rerun()
-                        except Exception as e:
-                            st.error(f"Fel: {e}")
 
                 # ── Vill bli kontaktad senare (t.ex. "hör av dig efter helgen") ──
                 # Skiljer sig från "Skjut upp" på Uppföljningar-fliken: den gäller
@@ -289,7 +280,7 @@ def _render_replies_tab():
                         if not pid:
                             st.warning("Kunde inte koppla svaret till en kontakt — kan inte boka.")
                         else:
-                            try:
+                            with shared.action("Kunde inte boka återkontakt"):
                                 db.set_next_contact_date(pid, rc_target.isoformat())
                                 note_text = (f"Ville kontaktas igen {rc_target.isoformat()}"
                                             + (f": {rc_anteckning}" if rc_anteckning.strip()
@@ -302,16 +293,12 @@ def _render_replies_tab():
                                 st.success(f"✅ Bokat — {bolag or namn} dyker upp igen "
                                            f"{rc_target.isoformat()}.")
                                 st.rerun()
-                            except Exception as e:
-                                st.error(f"Fel: {e}")
 
 
 def _render_followups_tab():
-    try:
+    due = []
+    with shared.action("Kunde inte läsa uppföljningar"):
         due = get_followups_due()
-    except Exception as e:
-        st.error(f"Fel: {e}")
-        due = []
 
     closes = [d for d in due if d["action"] == "close"]
     followups = [d for d in due if d["action"] != "close"]
@@ -338,12 +325,10 @@ def _render_followups_tab():
             col1.write(f"{p['namn']} — {p.get('bolag','')}")
             with col2:
                 if st.button("Stäng", key=f"close_{p['id']}"):
-                    try:
+                    with shared.action("Kunde inte stänga kontakten"):
                         process_close(p["id"])
                         st.success("Stängd — återkontakt schemalagd om ~4 månader.")
                         st.rerun()
-                    except Exception as e:
-                        st.error(f"Fel: {e}")
 
     # ── Återkontakt: cadenser avslutade för länge sen, redo att köras om ────────
     # Ren påminnelselista (kräver att nasta_kontakt_datum-kolumnen finns i DB,
@@ -364,13 +349,11 @@ def _render_followups_tab():
             with col2:
                 if st.button("🔁 Starta om", key=f"recontact_{p['id']}",
                              width="stretch"):
-                    try:
+                    with shared.action("Kunde inte starta om kontakten"):
                         db.restart_cadence(p["id"])
                         st.success(f"{p.get('bolag','Kontakten')} tillbaka i "
                                    f"nya leads — skriv ett nytt mejl när du vill.")
                         st.rerun()
-                    except Exception as e:
-                        st.error(f"Fel: {e}")
 
 
 def _render_followup_card(item):
@@ -388,7 +371,7 @@ def _render_followup_card(item):
 
     def _advance(logmsg, typ, new_status, meeting_date=None):
         """Logga åtgärden + flytta kontakten framåt (+ ev. boka möte), uppdatera vyn."""
-        try:
+        with shared.action("Kunde inte logga åtgärden"):
             dm = db.insert_dm(pid, logmsg, typ=typ)
             db.mark_dm_skickad(dm["id"])
             db.update_prospect_status(
@@ -400,8 +383,6 @@ def _render_followup_card(item):
             else:
                 st.success("✅ Klart — loggat och uppdaterat.")
             st.rerun()
-        except Exception as e:
-            st.error(f"Fel: {e}")
 
     with st.container(border=True):
         head, act = st.columns([5, 1])
@@ -427,13 +408,11 @@ def _render_followup_card(item):
                 st.caption("Säker?")
                 if st.button("✅ Ja, avvisa", key=f"fu_reject_yes_{pid}",
                              type="primary", width="stretch"):
-                    try:
+                    with shared.action("Kunde inte avvisa kontakten"):
                         db.update_prospect_status(pid, "avbojd")
                         st.session_state.pop(confirm_key, None)
                         st.success(f"Avvisade {p.get('bolag','kunden')}.")
                         st.rerun()
-                    except Exception as e:
-                        st.error(f"Fel: {e}")
                 if st.button("Avbryt", key=f"fu_reject_no_{pid}",
                              width="stretch"):
                     st.session_state.pop(confirm_key, None)
@@ -516,12 +495,10 @@ def _render_followup_card(item):
                                        placeholder="+46 70 123 45 67")
                 if st.button("💾 Spara nummer", key=f"save_tel_{pid}"):
                     if newtel.strip():
-                        try:
+                        with shared.action("Kunde inte spara telefonnumret"):
                             db.update_prospect(pid, {"telefon": newtel.strip()})
                             st.success("Sparat — öppna fliken igen för att ringa.")
                             st.rerun()
-                        except Exception as e:
-                            st.error(f"Fel: {e}")
 
         # ── Markera manuellt (följt upp utanför appen) / avböj ──
         with tab_other:
@@ -544,9 +521,7 @@ def _render_followup_card(item):
                 if st.button("❌ Inte intresserad", key=f"freject_{pid}",
                              width="stretch",
                              help="Ta bort ur uppföljningskön."):
-                    try:
+                    with shared.action("Kunde inte avböja kontakten"):
                         db.update_prospect_status(pid, "avbojd")
                         st.success("Avböjd.")
                         st.rerun()
-                    except Exception as e:
-                        st.error(f"Fel: {e}")

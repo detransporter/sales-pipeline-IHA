@@ -5,6 +5,7 @@ import streamlit as st
 from utils.excel_parser import parse_excel, dataframe_to_prospect_records
 from agents.prospecting import score_dataframe
 from database import supabase_client as db
+from views import shared
 from views.shared import KONTAKT_KATEGORIER
 
 # SQL David kan klistra in i Supabase om 'kategori'-kolumnen saknas.
@@ -61,7 +62,7 @@ def _render_manual_create():
                 "status": "ej_kontaktad",
                 "score": 5,
             }
-            try:
+            with shared.action("Kunde inte skapa kontakt"):
                 saved = db.insert_prospect(record)
                 st.success(f"✅ {bolag.strip()} skapad som **{kategori}** — "
                            "syns nu i 📊 Översikt.")
@@ -72,8 +73,6 @@ def _render_manual_create():
                         "kolumnen saknas i databasen. Klistra in detta i Supabase → "
                         "SQL Editor en gång, så funkar kategorier överallt:")
                     st.code(_KATEGORI_SQL, language="sql")
-            except Exception as e:
-                st.error(f"Kunde inte skapa kontakt: {e}")
 
 
 def _render_excel_import():

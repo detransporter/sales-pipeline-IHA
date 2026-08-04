@@ -424,8 +424,15 @@ class action:
         with shared.action("Kunde inte spara"):
             db.save(...)
             st.success("Sparat!")
+            st.rerun()          # funkar — se kontrollflödet nedan
 
-    Sätt rerun=True för att köra st.rerun() när blocket lyckats.
+    Två fördelar mot ett eget try/except:
+      1. Felet LOGGAS till app_errors.log med full traceback, inte bara visas
+         och glöms.
+      2. Meddelandet blir begripligt ("Kunde inte spara: ...") i stället för
+         ett bart "Fel: <teknisk text>".
+
+    Sätt rerun=True för att köra st.rerun() automatiskt när blocket lyckats.
     """
 
     def __init__(self, felmeddelande: str = "Fel", rerun: bool = False):
@@ -440,6 +447,19 @@ class action:
             if self.rerun:
                 st.rerun()
             return False
+
+        # Streamlits kontrollflöde — st.rerun(), st.stop(), st.switch_page() —
+        # signalerar genom att kasta undantag som ärver från BaseException, INTE
+        # från Exception. De är inte fel och får aldrig sväljas: släpp igenom dem.
+        #
+        # Utan det här blev ett st.rerun() INUTI blocket uppätet och visat som
+        # "Kunde inte spara: RerunException(...)" — trots att sparningen lyckats.
+        # (Precis den buggen fanns i render_postpone_panel 2026-08-03 till att
+        # den upptäcktes dagen efter.) Det är också det som gör det tryggt att
+        # skriva om gamla try/except-block hit: de flesta avslutar med st.rerun().
+        if not issubclass(exc_type, Exception):
+            return False
+
         try:
             _logger.warning("%s: %s", self.felmeddelande, exc, exc_info=True)
         except Exception:

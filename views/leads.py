@@ -11,6 +11,7 @@ import streamlit as st
 from database import supabase_client as db
 from integrations import apify_research as _apify
 from views.lead_card import enrich_lead, render_lead_card
+from views import shared
 from views.shared import goto, cached_sent_emails
 
 # Hur många leads auto-körningen bearbetar per omgång (personsök är långsamt/kostar,
@@ -63,7 +64,7 @@ def render():
         n_new = st.number_input("Antal", 1, 15, 5)
         if st.button("Föreslå leads"):
             with st.spinner("Söker bolag..."):
-                try:
+                with shared.action("Kunde inte föreslå nya leads"):
                     from agents.lead_finder import suggest_leads
                     _apify.clear_last_error()
                     existing = db.get_existing_companies()
@@ -79,8 +80,6 @@ def render():
                         st.rerun()
                     else:
                         st.info("Inga nya förslag.")
-                except Exception as e:
-                    st.error(f"Fel: {e}")
 
 
 def _render_bulk_enrich(pending: list, contact_cache: dict) -> None:

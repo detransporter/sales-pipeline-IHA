@@ -5,6 +5,7 @@ from datetime import date
 import streamlit as st
 
 from database import supabase_client as db
+from views import shared
 from views.shared import kategori_label, unique_prospect_labels
 
 _MEETING_STATUSES = ["bokad", "genomford", "avbokad"]
@@ -15,11 +16,12 @@ _STATUS_COLOR = {"bokad": "#2563eb", "genomford": "#16a34a", "avbokad": "#dc2626
 def render():
     st.title("📅 Möten")
 
-    try:
+    # Reservvärdet sätts FÖRE blocket: går läsningen fel sväljer shared.action
+    # felet (och loggar det), och sidan ritas vidare med en tom lista i stället
+    # för att krascha på en odefinierad variabel.
+    meetings = []
+    with shared.action("Kunde inte läsa möten"):
         meetings = db.get_meetings()
-    except Exception as e:
-        st.error(f"Fel: {e}")
-        meetings = []
 
     tab_cal, tab_list, tab_new = st.tabs(
         ["🗓️ Kalender", "📋 Bokade möten", "➕ Boka nytt möte"])
@@ -131,21 +133,17 @@ def _render_meeting_editor(m: dict, key_prefix: str) -> None:
         key=f"{key_prefix}_mstatus_{m['id']}",
     )
     if st.button("💾 Spara", key=f"{key_prefix}_save_meeting_{m['id']}"):
-        try:
+        with shared.action("Kunde inte spara mötet"):
             db.update_meeting(m["id"], {"anteckningar": notes, "status": new_status})
             st.success("Sparat!")
-        except Exception as e:
-            st.error(f"Fel: {e}")
 
 
 def _render_new_meeting_tab() -> None:
     st.subheader("Boka nytt möte")
-    try:
+    prospect_options = {}
+    with shared.action("Kunde inte läsa kontakter"):
         prospects_all = db.get_prospects()
         prospect_options = unique_prospect_labels(prospects_all)
-    except Exception as e:
-        st.error(f"Fel: {e}")
-        prospect_options = {}
 
     if prospect_options:
         chosen_p = st.selectbox("Kontakt", list(prospect_options.keys()))
@@ -156,11 +154,9 @@ def _render_new_meeting_tab() -> None:
             help="Går att ändra senare via kalendern eller listan — men bekvämt "
                  "att skriva direkt medan du kommer ihåg det.")
         if st.button("📅 Boka möte", type="primary"):
-            try:
+            with shared.action("Kunde inte boka mötet"):
                 p = prospect_options[chosen_p]
                 db.insert_meeting(p["id"], meeting_date.isoformat(), anteckningar=new_notes)
                 db.update_prospect_status(p["id"], "mote_bokat",
                                           meeting_date=meeting_date.isoformat())
                 st.success(f"Möte bokat med {p['namn']} den {meeting_date}!")
-            except Exception as e:
-                st.error(f"Fel: {e}")

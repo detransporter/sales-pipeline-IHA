@@ -6,6 +6,7 @@ import streamlit as st
 from agents import learning
 from agents.qualifier import qualify_reply
 from database import supabase_client as db
+from views import shared
 from views.shared import (PIPELINE_STATUSES, KONTAKT_KATEGORIER,
                           cached_prospects, cached_pipeline_stats, cached_sent_emails,
                           clear_data_cache, unique_prospect_labels,
@@ -23,15 +24,13 @@ _NEXT_ACTION = {
 def render():
     st.title("📊 Översikt")
 
-    try:
+    with shared.action("Kunde inte läsa statistiken"):
         stats = cached_pipeline_stats()
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Totalt kontaktade", stats["kontaktade"])
         c2.metric("Fått svar", stats["svar"])
         c3.metric("Möten bokade", stats["moten"])
         c4.metric("Konvertering", f"{stats['konvertering']}%")
-    except Exception as e:
-        st.error(f"Supabase-fel: {e}")
 
     st.divider()
     st.subheader("Pipeline")
@@ -59,14 +58,12 @@ def render():
     st.session_state["ov_kategori_v"] = kat_filter
     st.session_state["ov_minscore_v"] = min_score
 
-    try:
+    prospects = []
+    with shared.action("Kunde inte läsa kontakter"):
         status_param = None if status_filter == "Alla" else status_filter
         prospects = cached_prospects(status=status_param, min_score=min_score)
         if kat_filter != "Alla":
             prospects = [p for p in prospects if (p.get("kategori") or "") == kat_filter]
-    except Exception as e:
-        st.error(f"Fel: {e}")
-        prospects = []
 
     if not prospects:
         st.info("Inga kontakter matchar filtret.")
@@ -113,7 +110,7 @@ def render():
                     if not _namn_ny:
                         st.error("Namn kan inte vara tomt.")
                     else:
-                        try:
+                        with shared.action("Kunde inte spara ändringarna"):
                             fields = {
                                 "namn": _namn_ny,
                                 "titel": e_titel.strip(),
@@ -133,8 +130,6 @@ def render():
                             clear_data_cache()
                             st.success("Sparat!")
                             st.rerun()
-                        except Exception as e:
-                            st.error(f"Fel: {e}")
 
         with tab_status:
             cur = chosen.get("status", "ej_kontaktad")
@@ -147,7 +142,7 @@ def render():
             if new_status in ("svar_ja", "svar_nej", "mote_bokat"):
                 svar_text = st.text_area("Klistra in svaret (för AI-analys, valfritt)")
             if st.button("💾 Uppdatera status", type="primary", key="update_status"):
-                try:
+                with shared.action("Kunde inte uppdatera status"):
                     db.update_prospect_status(chosen["id"], new_status)
                     clear_data_cache()
                     if svar_text.strip():
@@ -159,8 +154,6 @@ def render():
                         )
                     st.success("Status uppdaterad!")
                     st.rerun()
-                except Exception as e:
-                    st.error(f"Fel: {e}")
 
         with tab_snooze:
             cur = chosen.get("status", "ej_kontaktad")
@@ -182,13 +175,11 @@ def render():
             confirm = st.checkbox("Ja, jag är säker — ta bort kontakten")
             if st.button("🗑️ Ta bort kontakt", type="primary", key="delete_prospect",
                          disabled=not confirm):
-                try:
+                with shared.action("Kunde inte ta bort kontakten"):
                     db.delete_prospect(chosen["id"])
                     clear_data_cache()
                     st.success("Kontakten är borttagen.")
                     st.rerun()
-                except Exception as e:
-                    st.error(f"Fel: {e}")
 
     st.divider()
     st.caption("Tunga rutor laddas först när du öppnar dem — håller sidbytet snabbt.")

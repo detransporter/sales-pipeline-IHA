@@ -236,13 +236,11 @@ def render():
                 else:
                     if st.button("✅", key=f"del_yes_{d['id']}_{i}",
                                  help="Bekräfta radering"):
-                        try:
+                        with shared.action("Kunde inte radera dealet"):
                             db.delete_pipeline_deal(d["id"])
                             st.session_state.pop(ck, None)
                             st.success("Deal raderat.")
                             st.rerun()
-                        except Exception as e:
-                            st.error(f"Fel: {e}")
                     if st.button("↩︎", key=f"del_no_{d['id']}_{i}", help="Ångra"):
                         st.session_state.pop(ck, None)
                         st.rerun()
