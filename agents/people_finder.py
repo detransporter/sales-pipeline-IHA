@@ -42,6 +42,7 @@ from dotenv import load_dotenv
 # personens RIKTIGA namn, istället för att ge upp helt.
 from integrations.apify_research import (_decode_cfemail, _EMAIL_JUNK,
                                           _generate_email_variants)
+from integrations import email_guard
 
 # BeautifulSoup ger strukturbevarande text (namn/titel/mejl hålls ihop rad för
 # rad, bild-alt-texter följer med). Tålig import — utan bs4 körs regex-strip.
@@ -133,6 +134,16 @@ Ingen text utanför JSON."""
 def _log(msg: str) -> None:
     """Konsollogg så David ser vilken sida som lästes (appen har ingen logging-setup)."""
     print(msg)
+
+
+def _domain_ar_nabar(email: str) -> bool:
+    """
+    False bara när adressens domän BEVISLIGEN inte kan ta emot mejl (varken MX
+    eller A i DNS). Osäkert svar — nätverksfel, timeout — räknas som nåbart, så
+    en dålig uppkoppling aldrig tystar en korrekt adress. Se email_guard.
+    """
+    domain = (email or "").rsplit("@", 1)[-1]
+    return email_guard.domain_can_receive_mail(domain) is not False
 
 
 def _normalize_url(url: str) -> str:
@@ -553,6 +564,15 @@ def find_person(bolag: str, website: str = "", target_role: str = "",
     email = str(data.get("email", "")).strip()
     if email and any(j in email.lower() for j in _EMAIL_JUNK):
         email = ""
+    # Modellen läser bolagsnamnet och skriver ibland adressen på en domän som
+    # inte finns — "Metalcolour Sverige AB" blev mn@metalcolor.com, med
+    # engelsk stavning. Domängissningen här bredvid hade rätt (metalcolour.com,
+    # som dessutom låg sparad på kontakten), men den lästa adressen vann.
+    # Mejlet gick iväg och studsade. Släng adresser vars domän bevisligen inte
+    # kan ta emot post — hellre ingen adress än en som kostar oss en studs.
+    if email and not _domain_ar_nabar(email):
+        _log(f"[people_finder] {bolag}: kastar {email} — domänen kan inte ta emot mejl")
+        email = ""
     telefon = str(data.get("telefon", "")).strip()
 
     # Claude fyller ibland i e-post/telefon i kandidatlistan för DEN VALDA
@@ -563,8 +583,9 @@ def find_person(bolag: str, website: str = "", target_role: str = "",
     # annan persons uppgifter.
     match = next((k for k in kandidater if k["namn"] == namn), None)
     if match:
-        if not email and match.get("email") and not any(
-                j in match["email"].lower() for j in _EMAIL_JUNK):
+        if (not email and match.get("email")
+                and not any(j in match["email"].lower() for j in _EMAIL_JUNK)
+                and _domain_ar_nabar(match["email"])):
             email = match["email"]
         if not telefon and match.get("telefon"):
             telefon = match["telefon"]

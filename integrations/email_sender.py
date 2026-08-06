@@ -22,6 +22,8 @@ from email.utils import formataddr
 
 from dotenv import load_dotenv
 
+from integrations import email_guard
+
 load_dotenv()
 
 
@@ -59,6 +61,13 @@ def send_email(to_addr: str, subject: str, body: str) -> tuple[bool, str]:
         return False, "Ogiltig mottagaradress."
     if not (subject or "").strip() and not (body or "").strip():
         return False, "Tomt mejl — skriv ämne och text först."
+
+    # Stoppa adresser vars domän bevisligen inte kan ta emot mejl, innan de
+    # kostar oss en studs. Se integrations/email_guard.py för varför det bara
+    # är domänen vi kontrollerar — och varför nätverksfel släpps igenom.
+    ok, orsak = email_guard.check_address(to_addr)
+    if not ok:
+        return False, orsak
 
     c = _conf()
     if not is_configured():
