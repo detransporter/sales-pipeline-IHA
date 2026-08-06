@@ -234,8 +234,9 @@ def log_sent_email(prospect_id: str, to_addr: str, subject: str, body: str) -> N
     if not prospect_id:
         return
     try:
+        from agents.email_writer import PROMPT_VERSION
         dm = db.insert_dm(prospect_id, f"Till: {to_addr}\nÄmne: {subject}\n\n{body}",
-                          typ="email")
+                          typ="email", angle=PROMPT_VERSION)
         db.mark_dm_skickad(dm["id"])
     except Exception:
         pass

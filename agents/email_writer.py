@@ -42,6 +42,18 @@ SIGNATURE = (
     "www.barisab.com"
 )
 
+# Version på skrivreglerna nedan. Stämplas på varje skickat mejl (dm_history.angle)
+# så utfallet går att jämföra mellan versioner i efterhand — utan stämpel är ett
+# A/B-test omöjligt att utvärdera när mejlen väl är ute.
+# HÖJ DEN när skrivreglerna ändras i sak, annars blandas två olika mejl ihop
+# under samma etikett och jämförelsen blir meningslös.
+#   v1  (t.o.m. 2026-08-05) — bad om 15 minuter; saknade proof point (buggen:
+#       PROOF_POINT skickades aldrig in) och sålde in branschtumregeln som om
+#       den vore mottagarens egen bokslutssiffra. Loggades utan stämpel (NULL).
+#   v2  (fr.o.m. 2026-08-06) — riktigt referenscase som bevis, ärlig om vad som
+#       är estimat, och erbjuder genomgången i stället för att be om ett möte.
+PROMPT_VERSION = "v2-fynd-fore-mote"
+
 PROOF_POINT = (
     "Hos ett nordiskt industribolag identifierade vi 18+ MSEK i dödlager på 5 dagar "
     "— ca 1 800 SKU:er. Ingen ERP-integration, ingen IT-avdelning inblandad."

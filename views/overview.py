@@ -21,6 +21,48 @@ _NEXT_ACTION = {
 }
 
 
+def _render_mejltest() -> None:
+    """
+    Utfall per version av mejltexten. Se agents/mail_test.py för varför
+    mognaden redovisas separat — en färsk version SER alltid sämre ut än en
+    gammal, helt enkelt för att svaren inte hunnit komma in än.
+    """
+    from agents import mail_test
+
+    rader = []
+    with shared.action("Kunde inte läsa mejltestet"):
+        rader = mail_test.jamfor_versioner()
+    if not rader:
+        st.info("Inga skickade mejl att jämföra än.")
+        return
+
+    st.dataframe(
+        [{"Version": r["version"], "Mejl": r["mejl"], "Kontakter": r["kontakter"],
+          "Svar": r["svar"], "Möten/ja": r["moten"],
+          "Svarsandel": f"{r['svarsandel_pct']} %",
+          "Äldsta mejl": f"{r['aldsta_dagar']:.0f} d",
+          "Mätbar?": "ja" if r["mogen"] else "för tidigt"}
+         for r in rader],
+        hide_index=True, use_container_width=True)
+
+    omogna = [r for r in rader if not r["mogen"]]
+    if omogna:
+        st.warning(
+            "**Jämför inte ännu.** " + ", ".join(
+                f"*{r['version']}* har bara funnits {r['aldsta_dagar']:.0f} dagar"
+                for r in omogna)
+            + f". Uppföljningskedjan är sju dagar lång, så under "
+              f"{mail_test.MOGEN_EFTER_DAGAR} dagar hinner svaren inte in — "
+              "en ny version ser alltid sämre ut än en gammal tills den fått "
+              "lika lång tid på sig.")
+
+    st.caption(
+        "Räknas per kontakt, inte per mejl. **Svar** = kontakten har fått status "
+        "svar_ja, svar_nej, möte bokat eller avböjd. Appen ser inga svar av sig "
+        "själv — kommer ett svar i Outlook måste du sätta statusen här, annars "
+        "syns det inte i tabellen.")
+
+
 def render():
     st.title("📊 Översikt")
 
@@ -31,6 +73,10 @@ def render():
         c2.metric("Fått svar", stats["svar"])
         c3.metric("Möten bokade", stats["moten"])
         c4.metric("Konvertering", f"{stats['konvertering']}%")
+
+    st.divider()
+    with st.expander("🧪 Mejltest — jämför versioner av texten"):
+        _render_mejltest()
 
     st.divider()
     st.subheader("Pipeline")
