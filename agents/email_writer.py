@@ -120,6 +120,16 @@ gått till vilket bolag som helst är ett misslyckat mejl.
   still — ovanligt i er bransch"). Insikten ska vara värd att ha kvar även om
   mottagaren aldrig svarar. Bara siffra + jämförelse — inget annat i den
   öppnande meningen.
+- FÖRUTSÄTT ATT DE REDAN KÄNNER SIN EGEN SIFFRA. Mottagaren ser sitt varulager
+  i varje månadsbokslut. Ett mejl vars hela poäng är att lagret är stort
+  levererar noll ny information — det är därför det vanligaste svaret blev
+  "vi är medvetna om lagersituationen, men inte intresserade". Den invändningen
+  betyder inte fel ämne; den betyder att insikten inte var en insikt.
+  Öppningen måste ge något de INTE kan räkna fram själva ur sitt eget system:
+  jämförelsen mot branschen, riktningen över flera år, eller förhållandet
+  mellan två tal de aldrig ställt bredvid varandra (t.ex. att lagret växte
+  medan omsättningen föll). Siffran ensam räcker aldrig — det är kontrasten
+  som är gåvan.
 - Aldrig "jag såg att ni är verksamma inom..." eller en allmän branschobservation
   utan jämförelsetal.
 - Exakta tal, inte runda ("~{{dos}} dagars lager" slår "mycket lager"; "43 MSEK"
@@ -144,8 +154,16 @@ struktur nedan), inte i en enda mening:
 - DRÖMRESULTAT i kronor: frigjort kapital ELLER lagerhållningskostnaden/år som
   försvinner — välj EN av dem, inte båda, om siffertaket redan är nått.
   Rama in som estimat ("erfarenhetsmässigt sitter 15–30 % av lagervärdet...").
-- SANNOLIKHET: proof point + att slutsatsen bygger på ERA EGNA bokslutssiffror
-  (inte gissningar).
+- SANNOLIKHET: använd PROOF POINT-blocket du får — ett faktiskt genomfört
+  uppdrag. Det är det enda beviset du har, och ett riktigt resultat slår varje
+  tumregel.
+  Skriv ALDRIG att ett estimat "bygger på era egna bokslutssiffror, inte
+  gissningar". Halvsanning: beräkningen utgår från deras siffror, men
+  procentsatsen bakom (15–25 % döda artiklar) är en branschtumregel. Att sälja
+  in tumregeln som deras egen siffra är precis vad en CFO genomskådar — och då
+  faller trovärdigheten i hela mejlet, inte bara i den meningen.
+  Var hellre öppen med var gränsen går: siffrorna är deras, spannet är
+  erfarenhet från liknande bolag. Ärligheten stärker, den försvagar inte.
 - TID: konkret ("en första bild inom en vecka, färdig analys på två veckor").
 - ANSTRÄNGNING: nära noll för dem — "en export ur ert affärssystem, vi gör resten.
   Ingen IT, inga möten, inget nytt system."
@@ -165,11 +183,21 @@ Aldrig ett sammanhängande textblock. Varje stycke = EN tanke:
    (5) Garanti — eget stycke
    (6) CTA — en fråga
 
-6) ERBJUDANDET ÄR SAMTALET, INTE ANALYSEN. Sälj ett kort samtal och gör det riskfritt.
-- Ett enda tydligt CTA i sista stycket: 15 minuter.
-- Avriskera samtalet i SAMMA stycke som CTA:n, inte som en konkurrerande fråga:
-  t.ex. "Har du 15 minuter — hittar vi inget värt att agera på har du bara
-  förlorat en kvart, och du får ramverket att köra själv ändå."
+6) ERBJUDANDET ÄR FÖRSTA FYNDET, INTE MÖTET.
+Ett möte är ansträngning, och "har du 15 minuter?" är den enklaste frågan i
+världen att strunta i att svara på — den ber om något innan den gett något.
+Vänd på ordningen: erbjud genomgången först och låt fyndet be om samtalet.
+- CTA:n ska bara kräva ett "ja" för att skickas något, aldrig ett bokat möte:
+  t.ex. "Vill du att jag skickar den genomgången? Svara bara ja, så har du den
+  inom en vecka." Ett enda CTA i sista stycket.
+- VIKTIGT om vad som erbjuds: den kostnadsfria genomgången bygger på deras
+  OFFENTLIGA bokslut — samma siffror som redan står i mejlet, satta i
+  sammanhang. Den kräver ingenting av dem. Den betalda analysen är något
+  annat: den går artikel för artikel och kräver en export ur deras
+  affärssystem. Blanda aldrig ihop de två, och antyd aldrig att de får hela
+  analysen gratis.
+- Samtalet nämns som något som händer EFTERÅT om de vill — aldrig som villkoret
+  för att få något.
 
 TON & FORM:
 - Svenska (engelska om bolaget är tydligt internationellt). Du-tilltal, mänskligt,
@@ -473,6 +501,14 @@ def generate_email(
         f"FAKTA OM BOLAGET (använd, hitta inte på mer):\n"
         + "\n".join(f"  {f}" for f in fakta)
         + f"\n{krok_block}{profil_block}"
+        # PROOF_POINT definierades i juli men skickades aldrig in i prompten —
+        # regel 3 bad modellen använda en proof point den aldrig fick. Utan
+        # bevis fyllde den luckan med branschtumregeln "15–25 % sitter
+        # erfarenhetsmässigt i döda artiklar", och sålde in den som en slutsats
+        # ur mottagarens eget bokslut. Det är precis vad svaren "vi är medvetna
+        # om lagersituationen men inte intresserade" reagerade på.
+        + f"\nPROOF POINT (ett faktiskt genomfört uppdrag — använd detta som bevis, "
+          f"ALDRIG en påhittad siffra eller en tumregel):\n  {PROOF_POINT}\n"
         + f"\n{mottagare}\n"
         f"Hälsning att använda: {halsning}\n"
         f"{nyhets_block}\n"
@@ -489,7 +525,8 @@ def generate_email(
             f"öppna med en artig knuff ('hörde inte av dig — vill inte att det här ska "
             f"falla mellan stolarna'), ge EN ny konkret vinkel/värde (t.ex. en till "
             f"siffra ur trenden eller kostnaden av att vänta), och avsluta med samma "
-            f"lätta 15-min-fråga. Upprepa inte hela det första mejlet.\n")
+            f"lätta fråga som första mejlet — erbjud att SKICKA genomgången, be inte "
+            f"om ett möte. Upprepa inte hela det första mejlet.\n")
     user_msg += "Returnera JSON."
 
     if language == "en":
