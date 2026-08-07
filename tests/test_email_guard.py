@@ -77,3 +77,26 @@ def test_utskick_stoppas_innan_smtp():
     assert ok is False
     assert "kan inte ta emot mejl" in orsak
     smtp.assert_not_called()
+
+
+# ── Homoglyfsanering ──────────────────────────────────────────────────────────
+# Modellen skrev en gång "Välјer" med kyrilliskt j (U+0458). Blandade
+# skriftsystem i annars latinsk text är ett nätfiskeknep som spamfilter
+# poängsätter — det får aldrig följa med ut i ett utskick.
+
+def test_kyrilliska_homoglyfer_bytts_ut():
+    from agents.email_writer import _sanera_homoglyfer
+    assert _sanera_homoglyfer("Välјer ni sedan") == "Väljer ni sedan"
+    assert _sanera_homoglyfer("Раypal") == "Paypal"       # kyrilliskt Р och а
+
+
+def test_svenska_tecken_lamnas_ifred():
+    from agents.email_writer import _sanera_homoglyfer
+    for s in ["Hej Åsa, här är översikten över lagret",
+              "Malmö · Växjö — 9 315 kr/dag", "Ärade Öberg, ändå"]:
+        assert _sanera_homoglyfer(s) == s
+
+
+def test_hart_blanksteg_blir_vanligt():
+    from agents.email_writer import _sanera_homoglyfer
+    assert _sanera_homoglyfer("9 315 kr") == "9 315 kr"

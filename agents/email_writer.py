@@ -52,7 +52,27 @@ SIGNATURE = (
 #       den vore mottagarens egen bokslutssiffra. Loggades utan stämpel (NULL).
 #   v2  (fr.o.m. 2026-08-06) — riktigt referenscase som bevis, ärlig om vad som
 #       är estimat, och erbjuder genomgången i stället för att be om ett möte.
-PROMPT_VERSION = "v2-fynd-fore-mote"
+PROMPT_VERSION = "v2-datafragan"
+
+# Vad David faktiskt behöver för att kunna göra jobbet. Bokslutssiffror räcker
+# bara till en uppskattning av hur mycket som ligger över en sund nivå — vilka
+# artiklar det gäller går inte att se utan deras egen data.
+# Formuleringen är byggd för att sänka TRÖSKELN, inte bara ansträngningen:
+# det är sällan jobbet som stoppar folk, det är att de inte vet exakt vad som
+# efterfrågas och är oroliga för vad de lämnar ifrån sig.
+DATA_ASK = (
+    "Fyra filer ur affärssystemet: artikelregister, lagersaldo, inleveranser och "
+    "utleveranser 12 månader bakåt. Artikelnummer räcker — inga kundnamn, inga "
+    "priser, inga marginaler. De flesta affärssystem exporterar det på tio minuter."
+)
+
+# Det kostnadsfria steget. OBS: bygger på DERAS data, inte på offentliga
+# bokslut — en genomgång av årsredovisningen ger samma siffror som redan står
+# i mejlet, och att erbjuda den som "gratis analys" blir en antiklimax.
+FREE_FIRST_LOOK = (
+    "en första bild ur deras egen data inom en vecka, kostnadsfritt: de tyngsta "
+    "döda och långsamma artiklarna, och vad de binder i kronor"
+)
 
 PROOF_POINT = (
     "Hos ett nordiskt industribolag identifierade vi 18+ MSEK i dödlager på 5 dagar "
@@ -88,6 +108,33 @@ def _detect_role(titel: str) -> str:
     if any(k in t for k in _SCM_KEYS):
         return "scm"
     return "neutral"
+
+
+# Tecken som SER ut som latinska bokstäver men tillhör ett annat skriftsystem.
+# Modellen råkar då och då blanda in dem — ett verkligt fall: "Välјer ni sedan"
+# där j:et var kyrilliskt U+0458. Det är inte kosmetiskt: blandade skriftsystem
+# i en text som annars är latinsk är ett klassiskt obfuskeringsknep i nätfiske,
+# och spamfilter poängsätter det. Mejlen är redan känsliga för avsändarrykte,
+# så de här tecknen får aldrig följa med ut.
+# Bara entydiga fall listas — svenska å/ä/ö och vanlig interpunktion rörs inte.
+_HOMOGLYFER = {
+    "а": "a", "е": "e", "о": "o", "р": "p", "с": "c",
+    "х": "x", "у": "y", "і": "i", "ј": "j", "һ": "h",
+    "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M",
+    "Н": "H", "О": "O", "Р": "P", "С": "C", "Т": "T",
+    "Х": "X", "Ѕ": "S", "І": "I", "Ј": "J",
+    "Α": "A", "Β": "B", "Ε": "E", "Ζ": "Z", "Η": "H",
+    "Ι": "I", "Κ": "K", "Μ": "M", "Ν": "N", "Ο": "O",
+    "Ρ": "P", "Τ": "T", "Χ": "X", "ο": "o", "α": "a",
+    " ": " ",   # hårt blanksteg — bryter radbrytning i vissa klienter
+}
+
+
+def _sanera_homoglyfer(text: str) -> str:
+    """Byt ut icke-latinska tecken som ser ut som latinska. Se _HOMOGLYFER."""
+    if not text:
+        return text
+    return "".join(_HOMOGLYFER.get(c, c) for c in text)
 
 
 def _first_name(namn: str) -> str:
@@ -181,13 +228,15 @@ struktur nedan), inte i en enda mening:
   Ingen IT, inga möten, inget nytt system."
 
 4) GARANTIN FÅR ETT EGET STYCKE — OCH GÄLLER BARA DEN BETALDA ANALYSEN.
-Skriv garantin ordagrant om ANALYSEN. Byt aldrig ut ordet "analysen" mot
-"genomgången". Den kostnadsfria genomgången kostar noll, och något som kostar
-noll kan inte "frigöra fem gånger sitt pris" — den meningen blir nonsens, och
-en CFO som läser den slutar lita på resten av mejlet.
-Nämns både genomgången och garantin i samma mejl måste det framgå att de hör
-till olika saker: genomgången är gratis och kräver inget, garantin gäller det
-betalda uppdraget som följer om de vill gå vidare.
+Skriv garantin ordagrant om ANALYSEN — det betalda uppdraget. Knyt den ALDRIG
+till den kostnadsfria första bilden. Den kostar noll, och något som kostar noll
+kan inte "frigöra fem gånger sitt pris"; meningen blir nonsens och en CFO som
+läser den slutar lita på resten av mejlet.
+Nämns båda i samma mejl måste det framgå att de hör till olika saker: första
+bilden är gratis och följer på deras export, garantin gäller den fullständiga
+analysen som de kan välja att beställa efteråt.
+I ett kort uppföljningsmejl får garantin utelämnas helt — bättre det än att
+klistras på fel erbjudande.
 Riskreverseringen ("{GUARANTEE}") ska INTE vävas in i samma mening som proof
 point eller drömresultat. Den står ensam, kort, som ett eget stycke — det gör
 den till en tydlig signal istället för "ännu en siffra bland andra".
@@ -202,21 +251,27 @@ Aldrig ett sammanhängande textblock. Varje stycke = EN tanke:
    (5) Garanti — eget stycke
    (6) CTA — en fråga
 
-6) ERBJUDANDET ÄR FÖRSTA FYNDET, INTE MÖTET.
-Ett möte är ansträngning, och "har du 15 minuter?" är den enklaste frågan i
-världen att strunta i att svara på — den ber om något innan den gett något.
-Vänd på ordningen: erbjud genomgången först och låt fyndet be om samtalet.
-- CTA:n ska bara kräva ett "ja" för att skickas något, aldrig ett bokat möte:
-  t.ex. "Vill du att jag skickar den genomgången? Svara bara ja, så har du den
-  inom en vecka." Ett enda CTA i sista stycket.
-- VIKTIGT om vad som erbjuds: den kostnadsfria genomgången bygger på deras
-  OFFENTLIGA bokslut — samma siffror som redan står i mejlet, satta i
-  sammanhang. Den kräver ingenting av dem. Den betalda analysen är något
-  annat: den går artikel för artikel och kräver en export ur deras
-  affärssystem. Blanda aldrig ihop de två, och antyd aldrig att de får hela
-  analysen gratis.
-- Samtalet nämns som något som händer EFTERÅT om de vill — aldrig som villkoret
-  för att få något.
+6) ERBJUDANDET ÄR DATAN, INTE ETT MÖTE OCH INTE EN BOKSLUTSGENOMGÅNG.
+Målet med mejlet är EN sak: få de fyra filerna. Allt annat är omväg.
+- Erbjud inte en "kostnadsfri genomgång av era offentliga bokslut". Den skulle
+  bara innehålla samma siffror som redan står i mejlet, och den som svarar ja
+  får en antiklimax i stället för ett skäl att gå vidare.
+- Be aldrig om "15 minuter". Ett möte kräver kalender och förberedelse; en
+  export kan vidarebefordras till ekonomi på en minut. Dataförfrågan är den
+  LÄGRE tröskeln, trots att den låter större.
+- CTA i sista stycket = fråga efter datan, och gör den ofarlig och mätbar i
+  minuter. Använd innehållet i DATAFÖRFRÅGAN-blocket du får. Nämn ALLTID att
+  artikelnummer räcker och att inga kundnamn eller priser behövs — det är
+  integritetsoron, inte arbetsinsatsen, som stoppar folk.
+- Ge dem något tillbaka FÖRST: se KOSTNADSFRITT FÖRSTA STEG-blocket. De får en
+  första bild ur sin EGEN data, gratis, inom en vecka. Det är detta som gör
+  asken rimlig — de lämnar en export och får ett konkret svar tillbaka utan att
+  ha bundit sig vid något.
+- Den fullständiga analysen artikel för artikel är det betalda uppdraget, och
+  det är DEN garantin gäller (se regel 4). Antyd aldrig att hela analysen är
+  gratis.
+- Ett samtal nämns bara som något som kan följa EFTERÅT om de vill — aldrig som
+  villkoret för att få något.
 
 TON & FORM:
 - Svenska (engelska om bolaget är tydligt internationellt). Du-tilltal, mänskligt,
@@ -528,6 +583,11 @@ def generate_email(
         # om lagersituationen men inte intresserade" reagerade på.
         + f"\nPROOF POINT (ett faktiskt genomfört uppdrag — använd detta som bevis, "
           f"ALDRIG en påhittad siffra eller en tumregel):\n  {PROOF_POINT}\n"
+        + f"\nDATAFÖRFRÅGAN (detta är vad mejlet ska be om — formulera med egna ord, "
+          f"men behåll de fyra filerna, att artikelnummer räcker, och tidsangivelsen):\n"
+          f"  {DATA_ASK}\n"
+        + f"\nKOSTNADSFRITT FÖRSTA STEG (vad de får tillbaka när de skickat filerna):\n"
+          f"  {FREE_FIRST_LOOK}\n"
         + f"\n{mottagare}\n"
         f"Hälsning att använda: {halsning}\n"
         f"{nyhets_block}\n"
@@ -547,8 +607,9 @@ def generate_email(
             f"svenska och har använts av misstag i tidigare utskick; skriv aldrig så. "
             f"Ge sedan EN ny konkret vinkel/värde (t.ex. en till "
             f"siffra ur trenden eller kostnaden av att vänta), och avsluta med samma "
-            f"lätta fråga som första mejlet — erbjud att SKICKA genomgången, be inte "
-            f"om ett möte. Upprepa inte hela det första mejlet.\n")
+            f"lätta fråga som första mejlet — be om de fyra filerna (artikelnummer "
+            f"räcker, inga kundnamn eller priser), be inte om ett möte och erbjud "
+            f"ingen bokslutsgenomgång. Upprepa inte hela det första mejlet.\n")
     user_msg += "Returnera JSON."
 
     if language == "en":
@@ -611,8 +672,10 @@ def generate_email(
         body = body.rstrip() + "\n\n" + SIGNATURE
 
     return {
-        "subject": str(data.get("subject", "")).strip() or f"{bolag} – {varulager_msek or '?'} MSEK i lager",
-        "body": body,
+        "subject": _sanera_homoglyfer(
+            str(data.get("subject", "")).strip()
+            or f"{bolag} – {varulager_msek or '?'} MSEK i lager"),
+        "body": _sanera_homoglyfer(body),
         "roll_spår": roll,
         "confidence": confidence,
         "review_flag": review_flag,
