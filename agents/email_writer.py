@@ -180,7 +180,14 @@ struktur nedan), inte i en enda mening:
 - ANSTRÄNGNING: nära noll för dem — "en export ur ert affärssystem, vi gör resten.
   Ingen IT, inga möten, inget nytt system."
 
-4) GARANTIN FÅR ETT EGET STYCKE.
+4) GARANTIN FÅR ETT EGET STYCKE — OCH GÄLLER BARA DEN BETALDA ANALYSEN.
+Skriv garantin ordagrant om ANALYSEN. Byt aldrig ut ordet "analysen" mot
+"genomgången". Den kostnadsfria genomgången kostar noll, och något som kostar
+noll kan inte "frigöra fem gånger sitt pris" — den meningen blir nonsens, och
+en CFO som läser den slutar lita på resten av mejlet.
+Nämns både genomgången och garantin i samma mejl måste det framgå att de hör
+till olika saker: genomgången är gratis och kräver inget, garantin gäller det
+betalda uppdraget som följer om de vill gå vidare.
 Riskreverseringen ("{GUARANTEE}") ska INTE vävas in i samma mening som proof
 point eller drömresultat. Den står ensam, kort, som ett eget stycke — det gör
 den till en tydlig signal istället för "ännu en siffra bland andra".
@@ -534,8 +541,11 @@ def generate_email(
         user_msg += (
             f"\nDETTA ÄR EN UPPFÖLJNING (påminnelse nr {followup_steg}) — mottagaren "
             f"fick redan ett första mejl utan att svara. Håll det KORT (3–4 meningar), "
-            f"öppna med en artig knuff ('hörde inte av dig — vill inte att det här ska "
-            f"falla mellan stolarna'), ge EN ny konkret vinkel/värde (t.ex. en till "
+            f"öppna med en artig knuff. Använd EXAKT en av dessa två formuleringar — "
+            f"blanda dem aldrig: 'Hörde inte av dig' (om mottagaren) ELLER 'Hör av mig "
+            f"igen' (om dig själv). Varianten 'Hörde inte av mig igen' är felaktig "
+            f"svenska och har använts av misstag i tidigare utskick; skriv aldrig så. "
+            f"Ge sedan EN ny konkret vinkel/värde (t.ex. en till "
             f"siffra ur trenden eller kostnaden av att vänta), och avsluta med samma "
             f"lätta fråga som första mejlet — erbjud att SKICKA genomgången, be inte "
             f"om ett möte. Upprepa inte hela det första mejlet.\n")
