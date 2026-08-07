@@ -69,9 +69,16 @@ DATA_ASK = (
 # Det kostnadsfria steget. OBS: bygger på DERAS data, inte på offentliga
 # bokslut — en genomgång av årsredovisningen ger samma siffror som redan står
 # i mejlet, och att erbjuda den som "gratis analys" blir en antiklimax.
+#
+# ANTALET ÄR POÄNGEN. "De tyngsta artiklarna" går inte att tacka ja till — man
+# vet inte vad man får. "100 artiklar, kostnadsfritt" är avgränsat, mätbart och
+# uppenbart ett smakprov: det säger samtidigt att det finns tusentals kvar, utan
+# att behöva säga det. Ändra inte till ett vagt uttryck.
 FREE_FIRST_LOOK = (
-    "en första bild ur deras egen data inom en vecka, kostnadsfritt: de tyngsta "
-    "döda och långsamma artiklarna, och vad de binder i kronor"
+    "En kostnadsfri provanalys på 100 artiklar ur deras egen data, klar inom en "
+    "vecka. De ser exakt vilka av de 100 som är döda eller långsamma, varför de "
+    "ligger kvar, och vad de binder i kronor — samma metod som i det fullständiga "
+    "uppdraget, fast på ett urval."
 )
 
 PROOF_POINT = (
@@ -198,6 +205,16 @@ gått till vilket bolag som helst är ett misslyckat mejl.
   till nästa nivå", "jag ville bara höra av mig", "spännande möjlighet", "win-win",
   "tveka inte att höra av dig".
 
+2b) HÄNG ALDRIG EN SIFFRA PÅ FEL SAK.
+Faktablocket innehåller två skilda lagerhållningskostnader: en för HELA
+varulagret och en för ENBART överlagret. De skiljer sig ofta med en faktor tio
+eller mer. Skriver du "de X extra dagarna kostar er Y kr per dag" måste Y vara
+överlagrets kostnad — aldrig totalens. Samma sak för frigörbart kapital: det
+spannet gäller döda/långsamma artiklar, inte överlagret mot norm.
+Mottagaren har siffrorna framför sig och räknar efter. Ett tal som hängts på
+fel storhet är värre än inget tal alls — det raserar förtroendet för hela
+mejlet, inklusive de siffror som stämmer.
+
 2) MAX 3–4 SIFFROR TOTALT I HELA MEJLET.
 Faktablocket du får är kontext för DIG — inte en checklista att tömma i mejlet.
 Välj de 3–4 mest slagkraftiga siffrorna (helst en flerårstrend + ETT kronbelopp)
@@ -232,9 +249,10 @@ Skriv garantin ordagrant om ANALYSEN — det betalda uppdraget. Knyt den ALDRIG
 till den kostnadsfria första bilden. Den kostar noll, och något som kostar noll
 kan inte "frigöra fem gånger sitt pris"; meningen blir nonsens och en CFO som
 läser den slutar lita på resten av mejlet.
-Nämns båda i samma mejl måste det framgå att de hör till olika saker: första
-bilden är gratis och följer på deras export, garantin gäller den fullständiga
-analysen som de kan välja att beställa efteråt.
+Nämns båda i samma mejl räcker det INTE att skriva "analysen" — ordet syftar då
+lika gärna på de 100 gratisartiklarna som står i stycket ovanför. Skriv ut
+vilken: "den fullständiga analysen" eller "det fullständiga uppdraget". Läsaren
+ska aldrig behöva gissa vad som är gratis och vad som kostar.
 I ett kort uppföljningsmejl får garantin utelämnas helt — bättre det än att
 klistras på fel erbjudande.
 Riskreverseringen ("{GUARANTEE}") ska INTE vävas in i samma mening som proof
@@ -263,10 +281,11 @@ Målet med mejlet är EN sak: få de fyra filerna. Allt annat är omväg.
   minuter. Använd innehållet i DATAFÖRFRÅGAN-blocket du får. Nämn ALLTID att
   artikelnummer räcker och att inga kundnamn eller priser behövs — det är
   integritetsoron, inte arbetsinsatsen, som stoppar folk.
-- Ge dem något tillbaka FÖRST: se KOSTNADSFRITT FÖRSTA STEG-blocket. De får en
-  första bild ur sin EGEN data, gratis, inom en vecka. Det är detta som gör
-  asken rimlig — de lämnar en export och får ett konkret svar tillbaka utan att
-  ha bundit sig vid något.
+- Ge dem något tillbaka FÖRST: se KOSTNADSFRITT FÖRSTA STEG-blocket. Nämn
+  ALLTID antalet — "100 artiklar" — aldrig en vag omskrivning som "en första
+  bild" eller "de tyngsta artiklarna". Ett avgränsat antal går att tacka ja
+  till; ett luddigt löfte gör det inte. Det gör dessutom självt jobbet med att
+  antyda att det finns tusentals artiklar kvar att gå igenom.
 - Den fullständiga analysen artikel för artikel är det betalda uppdraget, och
   det är DEN garantin gäller (se regel 4). Antyd aldrig att hela analysen är
   gratis.
@@ -516,10 +535,21 @@ def generate_email(
         fakta.append(f"Överlager mot norm: ~{kpi['overlager_dagar']} dagar ≈ "
                      f"{kpi['overlager_msek']} MSEK bundet över en sund nivå")
     if kpi.get("arlig_lagerkostnad_msek"):
-        s = f"Årlig lagerhållningskostnad (~20% av varulagret): {kpi['arlig_lagerkostnad_msek']} MSEK"
+        s = (f"Årlig lagerhållningskostnad för HELA varulagret (~20% av varulagret): "
+             f"{kpi['arlig_lagerkostnad_msek']} MSEK")
         if kpi.get("lagerkostnad_andel_av_vinst_pct"):
             s += f" (~{kpi['lagerkostnad_andel_av_vinst_pct']}% av rörelseresultatet)"
         fakta.append(s)
+        # Kostnaden för ENBART överlagret, färdigräknad. Utan den här raden
+        # hängde modellen totalkostnaden på överlagret ("de 4 extra dagarna
+        # kostar 9 315 kr/dag" — fel med en faktor 20), vilket är precis den
+        # sortens räknefel mottagaren kontrollerar.
+        if kpi.get("overlager_msek"):
+            _over_ar = round(float(kpi["overlager_msek"]) * 0.20, 2)
+            fakta.append(
+                f"Lagerhållningskostnad för ENBART överlagret ({kpi['overlager_msek']} "
+                f"MSEK över norm): ~{_over_ar} MSEK/år ≈ "
+                f"{round(_over_ar * 1_000_000 / 365):,} kr/dag".replace(",", " "))
     if kpi.get("frigorbart_lag_msek"):
         s = (f"DRÖMRESULTAT (ESTIMAT — presentera ALLTID som spann): ~{kpi['frigorbart_lag_msek']}–"
              f"{kpi['frigorbart_hog_msek']} MSEK frigörbart kapital "
@@ -609,7 +639,11 @@ def generate_email(
             f"siffra ur trenden eller kostnaden av att vänta), och avsluta med samma "
             f"lätta fråga som första mejlet — be om de fyra filerna (artikelnummer "
             f"räcker, inga kundnamn eller priser), be inte om ett möte och erbjud "
-            f"ingen bokslutsgenomgång. Upprepa inte hela det första mejlet.\n")
+            f"ingen bokslutsgenomgång. Upprepa inte hela det första mejlet.\n"
+            f"NÄMN ALLTID de 100 kostnadsfria artiklarna, även i det korta formatet. "
+            f"En påminnelse som bara ber om filerna utan att säga vad de får "
+            f"tillbaka är en ren begäran — och det är den sämsta sortens "
+            f"uppföljning. Erbjudandet ÄR skälet att svara.\n")
     user_msg += "Returnera JSON."
 
     if language == "en":
